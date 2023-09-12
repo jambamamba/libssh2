@@ -44,3 +44,6 @@ TAGS
 *~
 .DS_Store
 build
+arm-build
+mingw-build
+x86-build
