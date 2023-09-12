@@ -9,24 +9,24 @@ function package(){
 
     local library="ssh2"
     local rsync="rsync -uav --progress"
-    local builddir="/tmp/${library}/${target}-build" # $(mktemp -d)/installs
-    $rsync ${target}-build/* ${builddir}/
+    local builddir="${target}-build" # $(mktemp -d)/installs
 
-    local installsdir="${builddir}/installs" 
+    local installsdir="/tmp/${library}/${builddir}/installs" 
     mkdir -p ${installsdir}
     rm -fr ${installsdir}/*
+
+    cp -r include ${installsdir}/
     mkdir -p "${installsdir}/lib"
-    mkdir -p "${installsdir}/include"
 
     pushd "${builddir}"
-    $rsync --include="*/"  --include="*.h" --exclude="*" ./ ${installsdir}/
     if [ "$target" == "mingw" ]; then
-        $rsync --include="*/"  --include="*.dll*" --exclude="*" ./ ${installsdir}/
+        $rsync src/*.dll* ${installsdir}/lib/
     else
-        $rsync --include="*/"  --include="*.so*" --exclude="*" ./ ${installsdir}/
+        $rsync src/*.so* ${installsdir}/lib/
     fi
     popd
 
+    local builddir="/tmp/${library}/${builddir}" 
     compressInstalls library=${library} target=${target} builddir="${builddir}"
     # zip utils.zip "${installsdir}"
 }
