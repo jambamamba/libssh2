@@ -16,6 +16,9 @@ function package(){
     rm -fr ${installsdir}/*
 
     cp -r include ${installsdir}/
+    mkdir -p ${installsdir}/include/src
+    cp -r src/*.h ${installsdir}/include/src/
+
     mkdir -p "${installsdir}/lib"
 
     pushd "${builddir}"
