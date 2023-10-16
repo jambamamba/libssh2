@@ -48,6 +48,7 @@ function build(){
             -DCMAKE_BUILD_TYPE=ReleaseWithDebug \
             -DCMAKE_MODULE_PATH="${cmake_modules_path}" \
             -DCMAKE_PREFIX_PATH="${cmake_modules_path}" \
+            -DTARGET=${target} \
             -G Ninja ..
     elif [ "$target" == "arm" ]; then
         source "${SDK_DIR}/environment-setup-cortexa72-oe-linux"
@@ -57,6 +58,7 @@ function build(){
             -DCMAKE_BUILD_TYPE=ReleaseWithDebug \
             -DCMAKE_MODULE_PATH="${cmake_modules_path}" \
             -DCMAKE_PREFIX_PATH="${cmake_modules_path}" \
+            -DTARGET=${target} \
             -G "Ninja" ..
     elif [ "$target" == "mingw" ]; then
         source "${srcdir}/share/toolchains/x86_64-w64-mingw32.sh"
@@ -84,6 +86,7 @@ function build(){
             -DCMAKE_FIND_ROOT_PATH=/usr/x86_64-w64-mingw32 \
             -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
             -DCMAKE_INSTALL_PREFIX=../install-win \
+            -DTARGET=${target} \
             -G "Ninja" ..
     else
         echo "FATAL: bad target ${target}"
