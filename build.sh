@@ -7,31 +7,22 @@ source share/scripts/helper-functions.sh
 function package(){
     parseArgs $@
 
-    local library="ssh2"
-    local rsync="rsync -uav --progress"
-    local builddir="${target}-build" # $(mktemp -d)/installs
-
-    local installsdir="/tmp/${library}/${builddir}/installs" 
-    mkdir -p ${installsdir}
-    rm -fr ${installsdir}/*
-
-    cp -r include ${installsdir}/
-    mkdir -p ${installsdir}/include/src
-    cp -r src/*.h ${installsdir}/include/src/
-
-    mkdir -p "${installsdir}/lib"
-
-    pushd "${builddir}"
-    if [ "$target" == "mingw" ]; then
-        $rsync src/*.dll* ${installsdir}/lib/
-    else
-        $rsync src/*.so* ${installsdir}/lib/
-    fi
+    local cwd=$(pwd)
+    local git_commit=$(git rev-parse --short HEAD)
+    local project=$(basename ${cwd})
+    mkdir -p /tmp/${project}
+    pushd /tmp/${project}
+    rm -fr *
+    while read line; do
+        path="${line#/usr/local}"
+        path=$(dirname ${path})
+        mkdir -p .$path
+        cp $line .$path/
+    done < ${cwd}/${target}-build/install_manifest.txt
+    tar -cvJf ${project}-${git_commit}-${target}.tar.xz *
     popd
-
-    local builddir="/tmp/${library}/${builddir}" 
-    compressInstalls library=${library} target=${target} builddir="${builddir}"
-    # zip utils.zip "${installsdir}"
+    mv /tmp/${project}/${project}-${git_commit}-${target}.tar.xz /downloads
+    rm -fr /tmp/${project}
 }
 
 function build(){
@@ -45,9 +36,10 @@ function build(){
     pushd "${builddir}"
     if [ "$target" == "x86" ]; then
         cmake \
-            -DCMAKE_BUILD_TYPE=ReleaseWithDebug \
-            -DCMAKE_MODULE_PATH="${cmake_modules_path}" \
-            -DCMAKE_PREFIX_PATH="${cmake_modules_path}" \
+            -DCMAKE_BUILD_TYPE=RelWithDebugInfo \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DCMAKE_MODULE_PATH="/usr/local/cmake" \
+            -DCMAKE_PREFIX_PATH="/usr/local/cmake" \
             -DTARGET=${target} \
             -G Ninja ..
     elif [ "$target" == "arm" ]; then
@@ -93,6 +85,7 @@ function build(){
         exit -1
     fi
     ninja --verbose
+    sudo ninja install package
     popd
 }
 
@@ -127,7 +120,7 @@ function main(){
     local target="x86"
     parseArgs $@
     cleanBuild $@
-    installDeps $@
+    # installDeps $@
     build target="$target" clean="$clean"
     package target="$target"
 }
