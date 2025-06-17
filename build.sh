@@ -4,27 +4,6 @@ set -xe
 source share/pins.txt
 source share/scripts/helper-functions.sh
 
-function package(){
-    parseArgs $@
-
-    local cwd=$(pwd)
-    local git_commit=$(git rev-parse --short HEAD)
-    local project=$(basename ${cwd})
-    mkdir -p /tmp/${project}
-    pushd /tmp/${project}
-    rm -fr *
-    while read line; do
-        path="${line#/usr/local}"
-        path=$(dirname ${path})
-        mkdir -p .$path
-        cp $line .$path/
-    done < ${cwd}/${target}-build/install_manifest.txt
-    tar -cvJf ${project}-${git_commit}-${target}.tar.xz *
-    popd
-    mv /tmp/${project}/${project}-${git_commit}-${target}.tar.xz /downloads
-    rm -fr /tmp/${project}
-}
-
 function build(){
     local target="x86"
     parseArgs $@
@@ -122,7 +101,7 @@ function main(){
     cleanBuild $@
     # installDeps $@
     build target="$target" clean="$clean"
-    package target="$target"
+    package target="$target" dst="/downloads"
 }
 
 time main $@
