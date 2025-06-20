@@ -63,7 +63,7 @@ function build(){
         echo "FATAL: bad target ${target}"
         exit -1
     fi
-    ninja --verbose
+    ninja #--verbose
     sudo ninja install package
     popd
 }
