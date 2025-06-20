@@ -64,7 +64,7 @@ function build(){
         exit -1
     fi
     ninja #--verbose
-    sudo ninja install package
+    sudo ninja install && sudo chown $(id -u):$(id -g) install_manifest.txt
     popd
 }
 
@@ -78,21 +78,6 @@ function cleanBuild() {
         rm -fr *
     fi
     popd
-}
-
-function installDeps() {
-    local target="x86"
-    parseArgs $@
-    local builddir="${target}-build"
-    local artifacts_url="/home/$USER/downloads"
-
-    local libs=(openssl)
-    for library in "${libs[@]}"; do
-        local pin="${library}_pin"
-        # echo "${!pin}" #gets the value of variable where the variable name is "${library}_pin"
-        local artifacts_file="${library}-${!pin}-${target}.tar.xz"
-        installLib $@ library="${library}" artifacts_file="${artifacts_file}" artifacts_url="${artifacts_url}" 
-    done
 }
 
 function main(){
