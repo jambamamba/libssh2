@@ -58,7 +58,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-#if defined(WIN32) && defined(_WIN64)
+#if defined(_WIN32) && defined(_WIN64)
 #define LIBSSH2_SOCKET_MASK "%lld"
 #else
 #define LIBSSH2_SOCKET_MASK "%d"
@@ -67,7 +67,7 @@
 #ifdef LIBSSH2_WINDOWS_UWP
 #define popen(x, y) (NULL)
 #define pclose(x) (-1)
-#elif defined(WIN32)
+#elif defined(_WIN32)
 #define popen _popen
 #define pclose _pclose
 #endif
@@ -80,12 +80,15 @@ int openssh_fixture_have_docker(void)
 }
 
 static int run_command_varg(char **output, const char *command, va_list args)
+    LIBSSH2_PRINTF(2, 0);
+
+static int run_command_varg(char **output, const char *command, va_list args)
 {
     static const char redirect_stderr[] = "%s 2>&1";
 
     FILE *pipe;
     char command_buf[BUFSIZ];
-    char buf[BUFSIZ];
+    char buf[BUFSIZ + sizeof(redirect_stderr)];
     int ret;
     size_t buf_len;
 
@@ -145,6 +148,9 @@ static int run_command_varg(char **output, const char *command, va_list args)
 }
 
 static int run_command(char **output, const char *command, ...)
+    LIBSSH2_PRINTF(2, 3);
+
+static int run_command(char **output, const char *command, ...)
 {
     va_list args;
     int ret;
@@ -164,7 +170,6 @@ static const char *openssh_server_image(void)
 static int build_openssh_server_docker_image(void)
 {
     if(have_docker) {
-        char buildcmd[1024];
         const char *container_image_name = openssh_server_image();
         if(container_image_name) {
             int ret = run_command(NULL, "docker pull %s",
@@ -177,12 +182,9 @@ static int build_openssh_server_docker_image(void)
                 }
             }
         }
-        buildcmd[sizeof(buildcmd)-1] = 0;
-        snprintf(buildcmd, sizeof(buildcmd)-1,
-                 "docker build --quiet -t libssh2/openssh_server %s",
-                 srcdir_path("openssh_server"));
-
-        return run_command(NULL, buildcmd);
+        return run_command(NULL,
+                           "docker build --quiet -t libssh2/openssh_server %s",
+                           srcdir_path("openssh_server"));
     }
     else {
         return 0;
@@ -232,21 +234,20 @@ static const char *docker_machine_name(void)
 
 static int is_running_inside_a_container(void)
 {
-#ifdef WIN32
+#ifdef _WIN32
     return 0;
 #else
     const char *cgroup_filename = "/proc/self/cgroup";
     FILE *f;
     char *line = NULL;
     size_t len = 0;
-    ssize_t read;
     int found = 0;
     f = fopen(cgroup_filename, "r");
     if(!f) {
         /* Don't go further, we are not in a container */
         return 0;
     }
-    while((read = getline(&line, &len, f)) != -1) {
+    while(getline(&line, &len, f) != -1) {
         if(strstr(line, "docker")) {
             found = 1;
             break;
@@ -260,7 +261,7 @@ static int is_running_inside_a_container(void)
 
 static void portable_sleep(unsigned int seconds)
 {
-#ifdef WIN32
+#ifdef _WIN32
     Sleep(seconds);
 #else
     sleep(seconds);
@@ -276,7 +277,7 @@ static int ip_address_from_container(char *container_id, char **ip_address_out)
            https://github.com/docker/machine/issues/2612), so we retry a few
            times with exponential backoff if it fails */
         int attempt_no = 0;
-        int wait_time = 500;
+        unsigned int wait_time = 500;
         for(;;) {
             int ret = run_command(ip_address_out, "docker-machine ip %s",
                                   active_docker_machine);
@@ -338,7 +339,7 @@ static libssh2_socket_t open_socket_to_container(char *container_id)
     uint32_t hostaddr;
     libssh2_socket_t sock;
     struct sockaddr_in sin;
-    int counter;
+    unsigned int counter;
     libssh2_socket_t ret = LIBSSH2_INVALID_SOCKET;
 
     if(have_docker) {
@@ -393,7 +394,7 @@ static libssh2_socket_t open_socket_to_container(char *container_id)
     }
 
     sin.sin_family = AF_INET;
-    sin.sin_port = htons((short)strtol(port_string, NULL, 0));
+    sin.sin_port = htons((unsigned short)strtol(port_string, NULL, 0));
     sin.sin_addr.s_addr = hostaddr;
 
     for(counter = 0; counter < 3; ++counter) {
@@ -426,7 +427,7 @@ static void close_socket_to_container(libssh2_socket_t sock)
 {
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2 /* SHUT_RDWR */);
-#ifdef WIN32
+#ifdef _WIN32
         closesocket(sock);
 #else
         close(sock);
@@ -439,7 +440,7 @@ static char *running_container_id = NULL;
 int start_openssh_fixture(void)
 {
     int ret;
-#ifdef WIN32
+#ifdef _WIN32
     WSADATA wsadata;
 
     ret = WSAStartup(MAKEWORD(2, 0), &wsadata);
@@ -471,6 +472,10 @@ void stop_openssh_fixture(void)
     else if(have_docker) {
         fprintf(stderr, "Cannot stop container - none started\n");
     }
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 libssh2_socket_t open_socket_to_openssh_server(void)

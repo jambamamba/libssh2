@@ -2,10 +2,9 @@
 # Copyright (C) The libssh2 project and its contributors.
 # SPDX-License-Identifier: BSD-3-Clause
 
-set -e
+set -eu
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")"/..
 
-perl ./ci/checksrc.pl -i4 -m79 \
-  -Wsrc/libssh2_config.h \
-  src/*.[ch] include/*.h example/*.c tests/*.[ch]
+git ls-files "*.[ch]" "*.cc" | xargs -n1 \
+ci/checksrc.pl -i4 -m79 -AFOPENMODE -ASNPRINTF -ATYPEDEFSTRUCT

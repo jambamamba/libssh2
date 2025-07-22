@@ -80,7 +80,7 @@ hostkey_method_ssh_rsa_init(LIBSSH2_SESSION * session,
         return -1;
     }
 
-    buf.data = (unsigned char *)hostkey_data;
+    buf.data = (unsigned char *)LIBSSH2_UNCONST(hostkey_data);
     buf.dataptr = buf.data;
     buf.len = hostkey_data_len;
 
@@ -106,7 +106,7 @@ hostkey_method_ssh_rsa_init(LIBSSH2_SESSION * session,
 #endif
     {
         _libssh2_debug((session, LIBSSH2_TRACE_ERROR,
-                       "unexpected rsa type: %.*s", type_len, type));
+                       "unexpected rsa type: %.*s", (int)type_len, type));
         return -1;
     }
 
@@ -140,7 +140,7 @@ hostkey_method_ssh_rsa_init(LIBSSH2_SESSION * session,
 static int
 hostkey_method_ssh_rsa_initPEM(LIBSSH2_SESSION * session,
                                const char *privkeyfile,
-                               unsigned const char *passphrase,
+                               const unsigned char *passphrase,
                                void **abstract)
 {
     libssh2_rsa_ctx *rsactx;
@@ -170,7 +170,7 @@ static int
 hostkey_method_ssh_rsa_initPEMFromMemory(LIBSSH2_SESSION * session,
                                          const char *privkeyfiledata,
                                          size_t privkeyfiledata_len,
-                                         unsigned const char *passphrase,
+                                         const unsigned char *passphrase,
                                          void **abstract)
 {
     libssh2_rsa_ctx *rsactx;
@@ -242,11 +242,18 @@ hostkey_method_ssh_rsa_signv(LIBSSH2_SESSION * session,
     unsigned char hash[SHA_DIGEST_LENGTH];
     libssh2_sha1_ctx ctx;
 
-    (void)libssh2_sha1_init(&ctx);
-    for(i = 0; i < veccount; i++) {
-        libssh2_sha1_update(ctx, datavec[i].iov_base, datavec[i].iov_len);
+    if(!libssh2_sha1_init(&ctx)) {
+        return -1;
     }
-    libssh2_sha1_final(ctx, hash);
+    for(i = 0; i < veccount; i++) {
+        if(!libssh2_sha1_update(ctx,
+                                datavec[i].iov_base, datavec[i].iov_len)) {
+            return -1;
+        }
+    }
+    if(!libssh2_sha1_final(ctx, hash)) {
+        return -1;
+    }
 
     ret = _libssh2_rsa_sha1_sign(session, rsactx, hash, SHA_DIGEST_LENGTH,
                                  signature, signature_len);
@@ -316,9 +323,14 @@ hostkey_method_ssh_rsa_sha2_256_signv(LIBSSH2_SESSION * session,
         return -1;
     }
     for(i = 0; i < veccount; i++) {
-        libssh2_sha256_update(ctx, datavec[i].iov_base, datavec[i].iov_len);
+        if(!libssh2_sha256_update(ctx,
+                                  datavec[i].iov_base, datavec[i].iov_len)) {
+            return -1;
+        }
     }
-    libssh2_sha256_final(ctx, hash);
+    if(!libssh2_sha256_final(ctx, hash)) {
+        return -1;
+    }
 
     ret = _libssh2_rsa_sha2_sign(session, rsactx, hash, SHA256_DIGEST_LENGTH,
                                  signature, signature_len);
@@ -386,9 +398,14 @@ hostkey_method_ssh_rsa_sha2_512_signv(LIBSSH2_SESSION * session,
         return -1;
     }
     for(i = 0; i < veccount; i++) {
-        libssh2_sha512_update(ctx, datavec[i].iov_base, datavec[i].iov_len);
+        if(!libssh2_sha512_update(ctx,
+                                  datavec[i].iov_base, datavec[i].iov_len)) {
+            return -1;
+        }
     }
-    libssh2_sha512_final(ctx, hash);
+    if(!libssh2_sha512_final(ctx, hash)) {
+        return -1;
+    }
 
     ret = _libssh2_rsa_sha2_sign(session, rsactx, hash, SHA512_DIGEST_LENGTH,
                                  signature, signature_len);
@@ -481,6 +498,34 @@ static const LIBSSH2_HOSTKEY_METHOD hostkey_method_ssh_rsa_cert = {
 
 #endif /* LIBSSH2_RSA_SHA1 */
 
+#if LIBSSH2_RSA_SHA2
+
+static const LIBSSH2_HOSTKEY_METHOD hostkey_method_ssh_rsa_sha2_256_cert = {
+     "rsa-sha2-256-cert-v01@openssh.com",
+     SHA256_DIGEST_LENGTH,
+     NULL,
+     hostkey_method_ssh_rsa_initPEM,
+     hostkey_method_ssh_rsa_initPEMFromMemory,
+     NULL,
+     hostkey_method_ssh_rsa_sha2_256_signv,
+     NULL,                       /* encrypt */
+     hostkey_method_ssh_rsa_dtor,
+};
+
+static const LIBSSH2_HOSTKEY_METHOD hostkey_method_ssh_rsa_sha2_512_cert = {
+     "rsa-sha2-512-cert-v01@openssh.com",
+     SHA512_DIGEST_LENGTH,
+     NULL,
+     hostkey_method_ssh_rsa_initPEM,
+     hostkey_method_ssh_rsa_initPEMFromMemory,
+     NULL,
+     hostkey_method_ssh_rsa_sha2_512_signv,
+     NULL,                       /* encrypt */
+     hostkey_method_ssh_rsa_dtor,
+};
+
+#endif /* LIBSSH2_RSA_SHA2 */
+
 #endif /* LIBSSH2_RSA */
 
 #if LIBSSH2_DSA
@@ -518,7 +563,7 @@ hostkey_method_ssh_dss_init(LIBSSH2_SESSION * session,
         return -1;
     }
 
-    buf.data = (unsigned char *)hostkey_data;
+    buf.data = (unsigned char *)LIBSSH2_UNCONST(hostkey_data);
     buf.dataptr = buf.data;
     buf.len = hostkey_data_len;
 
@@ -562,7 +607,7 @@ hostkey_method_ssh_dss_init(LIBSSH2_SESSION * session,
 static int
 hostkey_method_ssh_dss_initPEM(LIBSSH2_SESSION * session,
                                const char *privkeyfile,
-                               unsigned const char *passphrase,
+                               const unsigned char *passphrase,
                                void **abstract)
 {
     libssh2_dsa_ctx *dsactx;
@@ -592,7 +637,7 @@ static int
 hostkey_method_ssh_dss_initPEMFromMemory(LIBSSH2_SESSION * session,
                                          const char *privkeyfiledata,
                                          size_t privkeyfiledata_len,
-                                         unsigned const char *passphrase,
+                                         const unsigned char *passphrase,
                                          void **abstract)
 {
     libssh2_dsa_ctx *dsactx;
@@ -659,6 +704,12 @@ hostkey_method_ssh_dss_signv(LIBSSH2_SESSION * session,
     libssh2_sha1_ctx ctx;
     int i;
 
+    if(!libssh2_sha1_init(&ctx)) {
+        *signature = NULL;
+        *signature_len = 0;
+        return -1;
+    }
+
     *signature = LIBSSH2_CALLOC(session, 2 * SHA_DIGEST_LENGTH);
     if(!*signature) {
         return -1;
@@ -666,11 +717,15 @@ hostkey_method_ssh_dss_signv(LIBSSH2_SESSION * session,
 
     *signature_len = 2 * SHA_DIGEST_LENGTH;
 
-    (void)libssh2_sha1_init(&ctx);
     for(i = 0; i < veccount; i++) {
-        libssh2_sha1_update(ctx, datavec[i].iov_base, datavec[i].iov_len);
+        if(!libssh2_sha1_update(ctx,
+                                datavec[i].iov_base, datavec[i].iov_len)) {
+            return -1;
+        }
     }
-    libssh2_sha1_final(ctx, hash);
+    if(!libssh2_sha1_final(ctx, hash)) {
+        return -1;
+    }
 
     if(_libssh2_dsa_sha1_sign(dsactx, hash, SHA_DIGEST_LENGTH, *signature)) {
         LIBSSH2_FREE(session, *signature);
@@ -749,7 +804,7 @@ hostkey_method_ssh_ecdsa_init(LIBSSH2_SESSION * session,
         return -1;
     }
 
-    buf.data = (unsigned char *)hostkey_data;
+    buf.data = (unsigned char *)LIBSSH2_UNCONST(hostkey_data);
     buf.dataptr = buf.data;
     buf.len = hostkey_data_len;
 
@@ -810,7 +865,7 @@ hostkey_method_ssh_ecdsa_init(LIBSSH2_SESSION * session,
 static int
 hostkey_method_ssh_ecdsa_initPEM(LIBSSH2_SESSION * session,
                                  const char *privkeyfile,
-                                 unsigned const char *passphrase,
+                                 const unsigned char *passphrase,
                                  void **abstract)
 {
     libssh2_ecdsa_ctx *ec_ctx = NULL;
@@ -839,7 +894,7 @@ static int
 hostkey_method_ssh_ecdsa_initPEMFromMemory(LIBSSH2_SESSION * session,
                                            const char *privkeyfiledata,
                                            size_t privkeyfiledata_len,
-                                           unsigned const char *passphrase,
+                                           const unsigned char *passphrase,
                                            void **abstract)
 {
     libssh2_ecdsa_ctx *ec_ctx = NULL;
@@ -889,7 +944,7 @@ hostkey_method_ssh_ecdsa_sig_verify(LIBSSH2_SESSION * session,
 
     /* keyname_len(4) + keyname(19){"ecdsa-sha2-nistp256"} +
        signature_len(4) */
-    buf.data = (unsigned char *)sig;
+    buf.data = (unsigned char *)LIBSSH2_UNCONST(sig);
     buf.dataptr = buf.data;
     buf.len = sig_len;
 
@@ -909,20 +964,33 @@ hostkey_method_ssh_ecdsa_sig_verify(LIBSSH2_SESSION * session,
 }
 
 
-#define LIBSSH2_HOSTKEY_METHOD_EC_SIGNV_HASH(digest_type)               \
-    do {                                                                \
-        unsigned char hash[SHA##digest_type##_DIGEST_LENGTH];           \
-        libssh2_sha##digest_type##_ctx ctx;                             \
-        int i;                                                          \
-        (void)libssh2_sha##digest_type##_init(&ctx);                    \
-        for(i = 0; i < veccount; i++) {                                 \
-            libssh2_sha##digest_type##_update(ctx, datavec[i].iov_base, \
-                                              datavec[i].iov_len);      \
-        }                                                               \
-        libssh2_sha##digest_type##_final(ctx, hash);                    \
-        ret = _libssh2_ecdsa_sign(session, ec_ctx, hash,                \
-                                  SHA##digest_type##_DIGEST_LENGTH,     \
-                                  signature, signature_len);            \
+#define LIBSSH2_HOSTKEY_METHOD_EC_SIGNV_HASH(digest_type)                \
+    do {                                                                 \
+        unsigned char hash[SHA##digest_type##_DIGEST_LENGTH];            \
+        libssh2_sha##digest_type##_ctx ctx;                              \
+        int i;                                                           \
+        if(!libssh2_sha##digest_type##_init(&ctx)) {                     \
+            ret = -1;                                                    \
+            break;                                                       \
+        }                                                                \
+        for(i = 0; i < veccount; i++) {                                  \
+            if(!libssh2_sha##digest_type##_update(ctx,                   \
+                                                  datavec[i].iov_base,   \
+                                                  datavec[i].iov_len)) { \
+                ret = -1;                                                \
+                break;                                                   \
+            }                                                            \
+        }                                                                \
+        if(ret == -1) {                                                  \
+            break;                                                       \
+        }                                                                \
+        if(!libssh2_sha##digest_type##_final(ctx, hash)) {               \
+            ret = -1;                                                    \
+            break;                                                       \
+        }                                                                \
+        ret = _libssh2_ecdsa_sign(session, ec_ctx, hash,                 \
+                                  SHA##digest_type##_DIGEST_LENGTH,      \
+                                  signature, signature_len);             \
     } while(0)
 
 
@@ -1088,7 +1156,7 @@ hostkey_method_ssh_ed25519_init(LIBSSH2_SESSION * session,
         return -1;
     }
 
-    buf.data = (unsigned char *)hostkey_data;
+    buf.data = (unsigned char *)LIBSSH2_UNCONST(hostkey_data);
     buf.dataptr = buf.data;
     buf.len = hostkey_data_len;
 
@@ -1119,7 +1187,7 @@ hostkey_method_ssh_ed25519_init(LIBSSH2_SESSION * session,
 static int
 hostkey_method_ssh_ed25519_initPEM(LIBSSH2_SESSION * session,
                                    const char *privkeyfile,
-                                   unsigned const char *passphrase,
+                                   const unsigned char *passphrase,
                                    void **abstract)
 {
     libssh2_ed25519_ctx *ec_ctx = NULL;
@@ -1150,7 +1218,7 @@ static int
 hostkey_method_ssh_ed25519_initPEMFromMemory(LIBSSH2_SESSION * session,
                                              const char *privkeyfiledata,
                                              size_t privkeyfiledata_len,
-                                             unsigned const char *passphrase,
+                                             const unsigned char *passphrase,
                                              void **abstract)
 {
     libssh2_ed25519_ctx *ed_ctx = NULL;
@@ -1224,7 +1292,8 @@ hostkey_method_ssh_ed25519_signv(LIBSSH2_SESSION * session,
     }
 
     return _libssh2_ed25519_sign(ctx, session, signature, signature_len,
-                                 datavec[0].iov_base, datavec[0].iov_len);
+                                 (const uint8_t *)datavec[0].iov_base,
+                                 datavec[0].iov_len);
 }
 
 
@@ -1291,6 +1360,8 @@ static const LIBSSH2_HOSTKEY_METHOD *hostkey_methods[] = {
 #if LIBSSH2_RSA_SHA2
     &hostkey_method_ssh_rsa_sha2_512,
     &hostkey_method_ssh_rsa_sha2_256,
+    &hostkey_method_ssh_rsa_sha2_512_cert,
+    &hostkey_method_ssh_rsa_sha2_256_cert,
 #endif /* LIBSSH2_RSA_SHA2 */
 #if LIBSSH2_RSA_SHA1
     &hostkey_method_ssh_rsa,
@@ -1326,18 +1397,15 @@ libssh2_hostkey_hash(LIBSSH2_SESSION * session, int hash_type)
         return (session->server_hostkey_md5_valid)
           ? (char *) session->server_hostkey_md5
           : NULL;
-        break;
 #endif /* LIBSSH2_MD5 */
     case LIBSSH2_HOSTKEY_HASH_SHA1:
         return (session->server_hostkey_sha1_valid)
           ? (char *) session->server_hostkey_sha1
           : NULL;
-        break;
     case LIBSSH2_HOSTKEY_HASH_SHA256:
         return (session->server_hostkey_sha256_valid)
           ? (char *) session->server_hostkey_sha256
           : NULL;
-        break;
     default:
         return NULL;
     }
@@ -1348,9 +1416,11 @@ static int hostkey_type(const unsigned char *hostkey, size_t len)
     static const unsigned char rsa[] = {
         0, 0, 0, 0x07, 's', 's', 'h', '-', 'r', 's', 'a'
     };
+#if LIBSSH2_DSA
     static const unsigned char dss[] = {
         0, 0, 0, 0x07, 's', 's', 'h', '-', 'd', 's', 's'
     };
+#endif
     static const unsigned char ecdsa_256[] = {
         0, 0, 0, 0x13, 'e', 'c', 'd', 's', 'a', '-', 's', 'h', 'a', '2', '-',
         'n', 'i', 's', 't', 'p', '2', '5', '6'
@@ -1373,8 +1443,10 @@ static int hostkey_type(const unsigned char *hostkey, size_t len)
     if(!memcmp(rsa, hostkey, 11))
         return LIBSSH2_HOSTKEY_TYPE_RSA;
 
+#if LIBSSH2_DSA
     if(!memcmp(dss, hostkey, 11))
         return LIBSSH2_HOSTKEY_TYPE_DSS;
+#endif
 
     if(len < 15)
         return LIBSSH2_HOSTKEY_TYPE_UNKNOWN;

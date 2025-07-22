@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     ssize_t nwritten;
     char *ptr;
 
-#ifdef WIN32
+#ifdef _WIN32
     WSADATA wsadata;
 
     rc = WSAStartup(MAKEWORD(2, 0), &wsadata);
@@ -214,9 +214,8 @@ int main(int argc, char *argv[])
             if(nwritten < 0)
                 break;
             ptr += nwritten;
-            nread -= nwritten;
+            nread -= (size_t)nwritten;
         } while(nread);
-
     } while(nwritten > 0);
 
     libssh2_sftp_close(sftp_handle);
@@ -231,11 +230,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     if(local)
@@ -244,6 +239,10 @@ shutdown:
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     LIBSSH2_AGENT *agent = NULL;
     struct libssh2_agent_publickey *identity, *prev_identity = NULL;
 
-#ifdef WIN32
+#ifdef _WIN32
     WSADATA wsadata;
 
     rc = WSAStartup(MAKEWORD(2, 0), &wsadata);
@@ -219,7 +219,7 @@ skip_shell:
     }
 
     /* Other channel types are supported via:
-     * libssh2_scp_send()
+     * libssh2_scp_send64()
      * libssh2_scp_recv2()
      * libssh2_channel_direct_tcpip()
      */
@@ -238,16 +238,16 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return rc;
 }

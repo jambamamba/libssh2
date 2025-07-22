@@ -79,6 +79,16 @@ AC_C_BIGENDIAN
 
 LT_LANG([Windows Resource])
 
+dnl check for windows.h
+case $host in
+  *-*-msys | *-*-cygwin* | *-*-cegcc*)
+    # These are POSIX-like systems using BSD-like sockets API.
+    ;;
+  *)
+    AC_CHECK_HEADERS([windows.h], [have_windows_h=yes], [have_windows_h=no])
+    ;;
+esac
+
 dnl check for how to do large files
 AC_SYS_LARGEFILE
 
@@ -121,6 +131,17 @@ Known crypto backends: auto, m4_set_contents([crypto_backends], [, ])"
   AS_MESSAGE([ERROR: ${crypto_errors}])
 else
   test "$found_crypto_str" = "" && found_crypto_str="$found_crypto"
+fi
+
+# ECDSA support with WinCNG
+AC_ARG_ENABLE(ecdsa-wincng,
+  AS_HELP_STRING([--enable-ecdsa-wincng],
+    WinCNG ECDSA support (requires Windows 10 or later)),
+  [wincng_ecdsa=$enableval])
+if test "$wincng_ecdsa" = yes; then
+  AC_DEFINE(LIBSSH2_ECDSA_WINCNG, 1, [Enable WinCNG ECDSA support])
+else
+  wincng_ecdsa=no
 fi
 
 # libz
@@ -166,6 +187,10 @@ else
   enable_clear_memory=yes
 fi
 
+LIBSSH2_CFLAG_EXTRAS=""
+
+LIBSSH2_CHECK_OPTION_WERROR
+
 dnl ************************************************************
 dnl option to switch on compiler debug options
 dnl
@@ -193,6 +218,8 @@ AS_HELP_STRING([--disable-debug],[Disable debug options]),
        AC_MSG_RESULT(no)
 )
 
+AC_SUBST(LIBSSH2_CFLAG_EXTRAS)
+
 dnl ************************************************************
 dnl Enable hiding of internal symbols in library to reduce its size and
 dnl speed dynamic linking of applications.  This currently is only supported
@@ -201,7 +228,7 @@ dnl
 AC_MSG_CHECKING([whether to enable hidden symbols in the library])
 AC_ARG_ENABLE(hidden-symbols,
 AS_HELP_STRING([--enable-hidden-symbols],[Hide internal symbols in library])
-AS_HELP_STRING([--disable-hidden-symbols],[Leave all symbols with default visibility in library]),
+AS_HELP_STRING([--disable-hidden-symbols],[Leave all symbols with default visibility in library (default)]),
 [ case "$enableval" in
   no)
        AC_MSG_RESULT(no)
@@ -232,16 +259,16 @@ AS_HELP_STRING([--disable-hidden-symbols],[Leave all symbols with default visibi
        AC_MSG_RESULT(no)
 )
 
-# Build tests?
-AC_ARG_ENABLE([tests],
-  [AS_HELP_STRING([--disable-tests], [Disable tests @<:@default=enabled@:>@])],
-  [
-    if ! test "x${enable_tests}" = "xyes"; then
-      enable_tests="no"
-    fi
-  ],
-  [enable_tests="yes"])
-AM_CONDITIONAL([ENABLE_TESTS], [test "x$enable_tests" = xyes])
+dnl Build without deprecated APIs?
+AC_ARG_ENABLE([deprecated],
+  [AS_HELP_STRING([--disable-deprecated], [Build without deprecated APIs @<:@default=no@:>@])],
+  [case "$enableval" in
+    *)
+      with_deprecated="no"
+      CPPFLAGS="$CPPFLAGS -DLIBSSH2_NO_DEPRECATED"
+      ;;
+  esac],
+  [with_deprecated="yes"])
 
 # Run Docker tests?
 AC_ARG_ENABLE([docker-tests],
@@ -289,19 +316,10 @@ AM_CONDITIONAL([USE_OSSFUZZ_STATIC], [test -f "$LIB_FUZZING_ENGINE"])
 
 
 # Checks for header files.
-AC_CHECK_HEADERS([errno.h fcntl.h stdio.h unistd.h sys/param.h sys/uio.h])
+AC_CHECK_HEADERS([errno.h fcntl.h stdio.h unistd.h sys/uio.h])
 AC_CHECK_HEADERS([sys/select.h sys/socket.h sys/ioctl.h sys/time.h])
 AC_CHECK_HEADERS([arpa/inet.h netinet/in.h])
 AC_CHECK_HEADERS([sys/un.h])
-
-case $host in
-  *-*-msys | *-*-cygwin* | *-*-cegcc*)
-    # These are POSIX-like systems using BSD-like sockets API.
-    ;;
-  *)
-    AC_CHECK_HEADERS([windows.h], [have_windows_h=yes], [have_windows_h=no])
-    ;;
-esac
 
 case $host in
   *darwin*|*interix*)
@@ -375,7 +393,6 @@ AM_CONDITIONAL([HAVE_WINDRES],
 AM_CONDITIONAL([HAVE_LIB_STATIC], [test "x$enable_static" != "xno"])
 
 # Configure parameters
-LIBSSH2_CHECK_OPTION_WERROR
 
 # Append crypto lib
 if   test "$found_crypto" = "openssl"; then
@@ -424,8 +441,10 @@ AC_MSG_NOTICE([summary of build options:
   Compiler flags:   ${CFLAGS}
   Library types:    Shared=${enable_shared}, Static=${enable_static}
   Crypto library:   ${found_crypto_str}
+  WinCNG ECDSA:     $wincng_ecdsa
   zlib compression: ${found_libz}
   Clear memory:     $enable_clear_memory
+  Deprecated APIs:  $with_deprecated
   Debug build:      $enable_debug
   Build examples:   $build_examples
   Run Docker tests: $run_docker_tests

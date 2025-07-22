@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) The libssh2 project and its contributors.
+# SPDX-License-Identifier: BSD-3-Clause
 
 set -eu
 
@@ -8,12 +10,12 @@ set -eu
 # Save off the current folder as the build root.
 export BUILD_ROOT="$PWD"
 
-echo "CC: $CC"
-echo "CXX: $CXX"
-echo "LIB_FUZZING_ENGINE: $LIB_FUZZING_ENGINE"
-echo "CFLAGS: $CFLAGS"
-echo "CXXFLAGS: $CXXFLAGS"
-echo "OUT: $OUT"
+echo "CC: ${CC:-}"
+echo "CXX: ${CXX:-}"
+echo "LIB_FUZZING_ENGINE: ${LIB_FUZZING_ENGINE:-}"
+echo "CFLAGS: ${CFLAGS:-}"
+echo "CXXFLAGS: ${CXXFLAGS:-}"
+echo "OUT: ${OUT:-}"
 
 MAKEFLAGS+="-j$(nproc)"
 export MAKEFLAGS
@@ -22,7 +24,7 @@ export MAKEFLAGS
 apt-get -y install automake libtool libssl-dev zlib1g-dev
 
 # Compile the fuzzer.
-./buildconf
+autoreconf -fi
 ./configure --disable-shared \
             --enable-ossfuzzers \
             --disable-examples-build \

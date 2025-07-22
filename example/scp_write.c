@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
     char *ptr;
     struct stat fileinfo;
 
-#ifdef WIN32
+#ifdef _WIN32
     WSADATA wsadata;
 
     rc = WSAStartup(MAKEWORD(2, 0), &wsadata);
@@ -152,8 +152,8 @@ int main(int argc, char *argv[])
     }
 
     /* Send a file via scp. The mode parameter must only have permissions! */
-    channel = libssh2_scp_send(session, scppath, fileinfo.st_mode & 0777,
-                               (size_t)fileinfo.st_size);
+    channel = libssh2_scp_send64(session, scppath, fileinfo.st_mode & 0777,
+                                 fileinfo.st_size, 0, 0);
 
     if(!channel) {
         char *errmsg;
@@ -178,16 +178,15 @@ int main(int argc, char *argv[])
             /* write the same data over and over, until error or completion */
             nwritten = libssh2_channel_write(channel, ptr, nread);
             if(nwritten < 0) {
-                fprintf(stderr, "ERROR %d\n", (int)nwritten);
+                fprintf(stderr, "ERROR %ld\n", (long)nwritten);
                 break;
             }
             else {
                 /* nwritten indicates how many bytes were written this time */
                 ptr += nwritten;
-                nread -= nwritten;
+                nread -= (size_t)nwritten;
             }
         } while(nread);
-
     } while(1);
 
     fprintf(stderr, "Sending EOF\n");
@@ -211,11 +210,7 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     if(local)
@@ -224,6 +219,10 @@ shutdown:
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

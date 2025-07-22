@@ -1,11 +1,3 @@
-.deps
-.libs
-Makefile
-Makefile.in
-Makefile.am.cmake
-*.gcno
-*.gcda
-stamp-h2
 direct_tcpip
 scp
 scp_nonblock

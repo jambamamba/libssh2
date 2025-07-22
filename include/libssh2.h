@@ -47,8 +47,10 @@
 /* We use underscore instead of dash when appending DEV in dev versions just
    to make the BANNER define (used by src/session.c) be a valid SSH
    banner. Release versions have no appended strings and may of course not
-   have dashes either. */
-#define LIBSSH2_VERSION                             "1.11.1_DEV"
+   have dashes either. The release version (without "_DEV") is not stored in
+   the source code repo, as the version is properly set in the tarballs by the
+   maketgz script.*/
+#define LIBSSH2_VERSION                             "1.11.2_DEV"
 
 /* The numeric version number is also available "in parts" by using these
    defines: */
@@ -90,11 +92,7 @@
 extern "C" {
 #endif
 
-#if defined(_WIN32) || defined(WIN32)
-#define LIBSSH2_WIN32
-#endif
-
-#ifdef LIBSSH2_WIN32
+#ifdef _WIN32
 # include <basetsd.h>
 # include <winsock2.h>
 #endif
@@ -106,7 +104,7 @@ extern "C" {
 
 /* Allow alternate API prefix from CFLAGS or calling app */
 #ifndef LIBSSH2_API
-# ifdef LIBSSH2_WIN32
+# ifdef _WIN32
 #  if defined(LIBSSH2_EXPORTS) || defined(_WINDLL)
 #   ifdef LIBSSH2_LIBRARY
 #    define LIBSSH2_API __declspec(dllexport)
@@ -116,16 +114,16 @@ extern "C" {
 #  else
 #   define LIBSSH2_API
 #  endif
-# else /* !LIBSSH2_WIN32 */
+# else /* !_WIN32 */
 #  define LIBSSH2_API
-# endif /* LIBSSH2_WIN32 */
+# endif /* _WIN32 */
 #endif /* LIBSSH2_API */
 
 #ifdef HAVE_SYS_UIO_H
 # include <sys/uio.h>
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && (_MSC_VER < 1600)
 typedef unsigned char uint8_t;
 typedef unsigned short int uint16_t;
 typedef unsigned int uint32_t;
@@ -134,23 +132,55 @@ typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
 typedef unsigned __int64 libssh2_uint64_t;
 typedef __int64 libssh2_int64_t;
-#if (!defined(HAVE_SSIZE_T) && !defined(ssize_t))
-typedef SSIZE_T ssize_t;
-#define HAVE_SSIZE_T
-#endif
 #else
 #include <stdint.h>
 typedef unsigned long long libssh2_uint64_t;
 typedef long long libssh2_int64_t;
 #endif
 
-#ifdef LIBSSH2_WIN32
+#if defined(_MSC_VER) && !defined(HAVE_SSIZE_T) && !defined(ssize_t)
+typedef SSIZE_T ssize_t;
+#define HAVE_SSIZE_T
+#endif
+
+#ifdef _WIN32
 typedef SOCKET libssh2_socket_t;
 #define LIBSSH2_INVALID_SOCKET INVALID_SOCKET
-#else /* !LIBSSH2_WIN32 */
+#define LIBSSH2_SOCKET_CLOSE(s) closesocket(s)
+#else /* !_WIN32 */
 typedef int libssh2_socket_t;
 #define LIBSSH2_INVALID_SOCKET -1
-#endif /* LIBSSH2_WIN32 */
+#define LIBSSH2_SOCKET_CLOSE(s) close(s)
+#endif /* _WIN32 */
+
+/* Compile-time deprecation macros */
+#if !defined(LIBSSH2_DISABLE_DEPRECATION) && !defined(LIBSSH2_LIBRARY)
+#  if defined(_MSC_VER)
+#    if _MSC_VER >= 1400
+#      define LIBSSH2_DEPRECATED(version, message) \
+         __declspec(deprecated("since libssh2 " # version ". " message))
+#    elif _MSC_VER >= 1310
+#      define LIBSSH2_DEPRECATED(version, message) \
+         __declspec(deprecated)
+#   endif
+#  elif defined(__GNUC__) && !defined(__INTEL_COMPILER)
+#    if (defined(__clang__) && __clang_major__ >= 3) || \
+        (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5))
+#      define LIBSSH2_DEPRECATED(version, message) \
+         __attribute__((deprecated("since libssh2 " # version ". " message)))
+#    elif __GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ > 0)
+#      define LIBSSH2_DEPRECATED(version, message) \
+         __attribute__((deprecated))
+#    endif
+#  elif defined(__SUNPRO_C) && __SUNPRO_C >= 0x5130
+#    define LIBSSH2_DEPRECATED(version, message) \
+       __attribute__((deprecated))
+#  endif
+#endif
+
+#ifndef LIBSSH2_DEPRECATED
+#define LIBSSH2_DEPRECATED(version, message)
+#endif
 
 /*
  * Determine whether there is small or large file support on windows.
@@ -176,7 +206,7 @@ typedef int libssh2_socket_t;
 #  undef LIBSSH2_USE_WIN32_LARGE_FILES
 #endif
 
-#if defined(LIBSSH2_WIN32) && !defined(LIBSSH2_USE_WIN32_LARGE_FILES) && \
+#if defined(_WIN32) && !defined(LIBSSH2_USE_WIN32_LARGE_FILES) && \
     !defined(LIBSSH2_USE_WIN32_SMALL_FILES)
 #  define LIBSSH2_USE_WIN32_SMALL_FILES
 #endif
@@ -241,7 +271,7 @@ typedef off_t libssh2_struct_stat_size;
    short of spec limits */
 #define LIBSSH2_PACKET_MAXCOMP      32000
 
-/* Maximum size to allow a payload to deccompress to, plays it safe by
+/* Maximum size to allow a payload to decompress to, plays it safe by
    allowing more than spec requires */
 #define LIBSSH2_PACKET_MAXDECOMP    40000
 
@@ -265,7 +295,7 @@ typedef struct _LIBSSH2_USERAUTH_KBDINT_PROMPT
 typedef struct _LIBSSH2_USERAUTH_KBDINT_RESPONSE
 {
     char *text;
-    unsigned int length;
+    unsigned int length;  /* FIXME: change type to size_t */
 } LIBSSH2_USERAUTH_KBDINT_RESPONSE;
 
 typedef struct _LIBSSH2_SK_SIG_INFO {
@@ -283,6 +313,7 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
              const unsigned char *data, size_t data_len, void **abstract)
 
 /* 'keyboard-interactive' authentication callback */
+/* FIXME: name_len, instruction_len -> size_t, num_prompts -> unsigned int? */
 #define LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(name_) \
     void name_(const char *name, int name_len, const char *instruction, \
                int instruction_len, int num_prompts, \
@@ -301,6 +332,8 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
 /* Flags for SK authentication */
 #define LIBSSH2_SK_PRESENCE_REQUIRED     0x01
 #define LIBSSH2_SK_VERIFICATION_REQUIRED 0x04
+
+/* FIXME: update lengths to size_t (or ssize_t): */
 
 /* Callbacks for special SSH packets */
 #define LIBSSH2_IGNORE_FUNC(name) \
@@ -472,7 +505,7 @@ typedef struct _LIBSSH2_POLLFD {
 /* Hostkey Types */
 #define LIBSSH2_HOSTKEY_TYPE_UNKNOWN            0
 #define LIBSSH2_HOSTKEY_TYPE_RSA                1
-#define LIBSSH2_HOSTKEY_TYPE_DSS                2
+#define LIBSSH2_HOSTKEY_TYPE_DSS                2  /* deprecated */
 #define LIBSSH2_HOSTKEY_TYPE_ECDSA_256          3
 #define LIBSSH2_HOSTKEY_TYPE_ECDSA_384          4
 #define LIBSSH2_HOSTKEY_TYPE_ECDSA_521          5
@@ -557,6 +590,9 @@ typedef struct _LIBSSH2_POLLFD {
 #define LIBSSH2_ERROR_RANDGEN                   -49
 #define LIBSSH2_ERROR_MISSING_USERAUTH_BANNER   -50
 #define LIBSSH2_ERROR_ALGO_UNSUPPORTED          -51
+#define LIBSSH2_ERROR_MAC_FAILURE               -52
+#define LIBSSH2_ERROR_HASH_INIT                 -53
+#define LIBSSH2_ERROR_HASH_CALC                 -54
 
 /* this is a define to provide the old (<= 1.2.7) name */
 #define LIBSSH2_ERROR_BANNER_NONE LIBSSH2_ERROR_BANNER_RECV
@@ -567,7 +603,7 @@ typedef struct _LIBSSH2_POLLFD {
 /*
  * libssh2_init()
  *
- * Initialize the libssh2 functions.  This typically initialize the
+ * Initialize the libssh2 functions.  This typically initializes the
  * crypto library.  It uses a global state, and is not thread safe --
  * you must make sure this function is not called concurrently.
  *
@@ -597,7 +633,7 @@ LIBSSH2_API void libssh2_free(LIBSSH2_SESSION *session, void *ptr);
 /*
  * libssh2_session_supported_algs()
  *
- * Fills algs with a list of supported acryptographic algorithms. Returns a
+ * Fills algs with a list of supported cryptographic algorithms. Returns a
  * non-negative number (number of supported algorithms) on success or a
  * negative number (an error code) on failure.
  *
@@ -617,14 +653,25 @@ libssh2_session_init_ex(LIBSSH2_ALLOC_FUNC((*my_alloc)),
 
 LIBSSH2_API void **libssh2_session_abstract(LIBSSH2_SESSION *session);
 
+typedef void (libssh2_cb_generic)(void);
+
+LIBSSH2_API libssh2_cb_generic *
+libssh2_session_callback_set2(LIBSSH2_SESSION *session, int cbtype,
+                              libssh2_cb_generic *callback);
+
+LIBSSH2_DEPRECATED(1.11.1, "Use libssh2_session_callback_set2()")
 LIBSSH2_API void *libssh2_session_callback_set(LIBSSH2_SESSION *session,
                                                int cbtype, void *callback);
 LIBSSH2_API int libssh2_session_banner_set(LIBSSH2_SESSION *session,
                                            const char *banner);
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.4.0, "Use libssh2_session_banner_set()")
 LIBSSH2_API int libssh2_banner_set(LIBSSH2_SESSION *session,
                                    const char *banner);
 
+LIBSSH2_DEPRECATED(1.2.8, "Use libssh2_session_handshake()")
 LIBSSH2_API int libssh2_session_startup(LIBSSH2_SESSION *session, int sock);
+#endif
 LIBSSH2_API int libssh2_session_handshake(LIBSSH2_SESSION *session,
                                           libssh2_socket_t sock);
 LIBSSH2_API int libssh2_session_disconnect_ex(LIBSSH2_SESSION *session,
@@ -911,12 +958,13 @@ libssh2_channel_window_read_ex(LIBSSH2_CHANNEL *channel,
 #define libssh2_channel_window_read(channel) \
     libssh2_channel_window_read_ex((channel), NULL, NULL)
 
-/* libssh2_channel_receive_window_adjust() is DEPRECATED, do not use! */
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.1.0, "Use libssh2_channel_receive_window_adjust2()")
 LIBSSH2_API unsigned long
 libssh2_channel_receive_window_adjust(LIBSSH2_CHANNEL *channel,
                                       unsigned long adjustment,
                                       unsigned char force);
-
+#endif
 LIBSSH2_API int
 libssh2_channel_receive_window_adjust2(LIBSSH2_CHANNEL *channel,
                                        unsigned long adjustment,
@@ -955,12 +1003,15 @@ LIBSSH2_API void libssh2_session_set_read_timeout(LIBSSH2_SESSION* session,
                                                   long timeout);
 LIBSSH2_API long libssh2_session_get_read_timeout(LIBSSH2_SESSION* session);
 
-/* libssh2_channel_handle_extended_data() is DEPRECATED, do not use! */
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.1.0, "libssh2_channel_handle_extended_data2()")
 LIBSSH2_API void libssh2_channel_handle_extended_data(LIBSSH2_CHANNEL *channel,
                                                       int ignore_mode);
+#endif
 LIBSSH2_API int libssh2_channel_handle_extended_data2(LIBSSH2_CHANNEL *channel,
                                                       int ignore_mode);
 
+#ifndef LIBSSH2_NO_DEPRECATED
 /* libssh2_channel_ignore_extended_data() is defined below for BC with version
  * 0.1
  *
@@ -968,11 +1019,12 @@ LIBSSH2_API int libssh2_channel_handle_extended_data2(LIBSSH2_CHANNEL *channel,
  * LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE is passed, extended data will be read
  * (FIFO) from the standard data channel
  */
-/* DEPRECATED */
+/* DEPRECATED since 0.3.0. Use libssh2_channel_handle_extended_data2(). */
 #define libssh2_channel_ignore_extended_data(channel, ignore)                 \
     libssh2_channel_handle_extended_data((channel), (ignore) ?                \
                                        LIBSSH2_CHANNEL_EXTENDED_DATA_IGNORE : \
                                        LIBSSH2_CHANNEL_EXTENDED_DATA_NORMAL)
+#endif
 
 #define LIBSSH2_CHANNEL_FLUSH_EXTENDED_DATA     -1
 #define LIBSSH2_CHANNEL_FLUSH_ALL               -2
@@ -997,29 +1049,35 @@ LIBSSH2_API int libssh2_channel_close(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_wait_closed(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_free(LIBSSH2_CHANNEL *channel);
 
-/* libssh2_scp_recv is DEPRECATED, do not use! */
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.7.0, "Use libssh2_scp_recv2()")
 LIBSSH2_API LIBSSH2_CHANNEL *libssh2_scp_recv(LIBSSH2_SESSION *session,
                                               const char *path,
                                               struct stat *sb);
+#endif
 /* Use libssh2_scp_recv2() for large (> 2GB) file support on windows */
 LIBSSH2_API LIBSSH2_CHANNEL *libssh2_scp_recv2(LIBSSH2_SESSION *session,
                                                const char *path,
                                                libssh2_struct_stat *sb);
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.2.6, "Use libssh2_scp_send64()")
 LIBSSH2_API LIBSSH2_CHANNEL *libssh2_scp_send_ex(LIBSSH2_SESSION *session,
                                                  const char *path, int mode,
                                                  size_t size, long mtime,
                                                  long atime);
+#define libssh2_scp_send(session, path, mode, size) \
+    libssh2_scp_send_ex((session), (path), (mode), (size), 0, 0)
+#endif
 LIBSSH2_API LIBSSH2_CHANNEL *
 libssh2_scp_send64(LIBSSH2_SESSION *session, const char *path, int mode,
                    libssh2_int64_t size, time_t mtime, time_t atime);
 
-#define libssh2_scp_send(session, path, mode, size) \
-    libssh2_scp_send_ex((session), (path), (mode), (size), 0, 0)
-
-/* DEPRECATED */
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.0, "")
 LIBSSH2_API int libssh2_base64_decode(LIBSSH2_SESSION *session, char **dest,
                                       unsigned int *dest_len,
                                       const char *src, unsigned int src_len);
+#endif
 
 LIBSSH2_API
 const char *libssh2_version(int req_version_num);
@@ -1096,7 +1154,7 @@ libssh2_knownhost_init(LIBSSH2_SESSION *session);
 #define LIBSSH2_KNOWNHOST_KEY_SHIFT        18
 #define LIBSSH2_KNOWNHOST_KEY_RSA1         (1<<18)
 #define LIBSSH2_KNOWNHOST_KEY_SSHRSA       (2<<18)
-#define LIBSSH2_KNOWNHOST_KEY_SSHDSS       (3<<18)
+#define LIBSSH2_KNOWNHOST_KEY_SSHDSS       (3<<18)  /* deprecated */
 #define LIBSSH2_KNOWNHOST_KEY_ECDSA_256    (4<<18)
 #define LIBSSH2_KNOWNHOST_KEY_ECDSA_384    (5<<18)
 #define LIBSSH2_KNOWNHOST_KEY_ECDSA_521    (6<<18)
@@ -1175,7 +1233,7 @@ libssh2_knownhost_check(LIBSSH2_KNOWNHOSTS *hosts,
                         int typemask,
                         struct libssh2_knownhost **knownhost);
 
-/* this function is identital to the above one, but also takes a port
+/* this function is identical to the above one, but also takes a port
    argument that allows libssh2 to do a better check */
 LIBSSH2_API int
 libssh2_knownhost_checkp(LIBSSH2_KNOWNHOSTS *hosts,
@@ -1420,7 +1478,7 @@ libssh2_agent_get_identity_path(LIBSSH2_AGENT *agent);
  */
 LIBSSH2_API void libssh2_keepalive_config(LIBSSH2_SESSION *session,
                                           int want_reply,
-                                          unsigned interval);
+                                          unsigned int interval);
 
 /*
  * libssh2_keepalive_send()

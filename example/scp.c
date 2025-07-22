@@ -8,7 +8,7 @@
 #include "libssh2_setup.h"
 #include <libssh2.h>
 
-#ifdef WIN32
+#ifdef _WIN32
 #define write(f, b, c)  write((f), (b), (unsigned int)(c))
 #endif
 
@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
     libssh2_struct_stat fileinfo;
     libssh2_struct_stat_size got = 0;
 
-#ifdef WIN32
+#ifdef _WIN32
     WSADATA wsadata;
 
     rc = WSAStartup(MAKEWORD(2, 0), &wsadata);
@@ -158,13 +158,13 @@ int main(int argc, char *argv[])
             amount = (int)(fileinfo.st_size - got);
         }
 
-        nread = libssh2_channel_read(channel, mem, amount);
+        nread = libssh2_channel_read(channel, mem, (size_t)amount);
         if(nread > 0) {
-            write(1, mem, nread);
+            write(1, mem, (size_t)nread);
         }
         else if(nread < 0) {
-            fprintf(stderr, "libssh2_channel_read() failed: %d\n",
-                    (int)nread);
+            fprintf(stderr, "libssh2_channel_read() failed: %ld\n",
+                    (long)nread);
             break;
         }
         got += nread;
@@ -182,16 +182,16 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

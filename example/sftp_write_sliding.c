@@ -26,6 +26,9 @@
 #ifdef HAVE_ARPA_INET_H
 #include <arpa/inet.h>
 #endif
+#ifdef HAVE_SYS_TIME_H
+#include <sys/time.h>
+#endif
 
 #include <stdio.h>
 #include <time.h>  /* for time() */
@@ -52,7 +55,14 @@ static int waitsocket(libssh2_socket_t socket_fd, LIBSSH2_SESSION *session)
 
     FD_ZERO(&fd);
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
     FD_SET(socket_fd, &fd);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
     /* now make sure we wait in the correct direction */
     dir = libssh2_session_block_directions(session);
@@ -88,7 +98,7 @@ int main(int argc, char *argv[])
     libssh2_struct_stat_size total = 0;
     int duration;
 
-#ifdef WIN32
+#ifdef _WIN32
     WSADATA wsadata;
 
     rc = WSAStartup(MAKEWORD(2, 0), &wsadata);
@@ -244,7 +254,7 @@ int main(int argc, char *argv[])
                 break;
         }
         memuse += nread;
-        total += nread;
+        total += (libssh2_struct_stat_size)nread;
 
         /* write data in a loop until we block */
         while((nwritten = libssh2_sftp_write(sftp_handle, mem, memuse)) ==
@@ -254,10 +264,10 @@ int main(int argc, char *argv[])
         if(nwritten < 0)
             break;
 
-        if(memuse - nwritten) {
+        if(memuse - (size_t)nwritten) {
             /* make room for more data at the end of the buffer */
-            memmove(&mem[0], &mem[nwritten], memuse - nwritten);
-            memuse -= nwritten;
+            memmove(&mem[0], &mem[nwritten], memuse - (size_t)nwritten);
+            memuse -= (size_t)nwritten;
         }
         else
             /* 'mem' was consumed fully */
@@ -270,11 +280,12 @@ int main(int argc, char *argv[])
     fprintf(stderr, "%ld bytes in %d seconds makes %.1f bytes/sec\n",
             (long)total, duration, (double)total / duration);
 
-    fclose(local);
     libssh2_sftp_close(sftp_handle);
     libssh2_sftp_shutdown(sftp_session);
 
 shutdown:
+
+    fclose(local);
 
     if(session) {
         while(libssh2_session_disconnect(session, "Normal Shutdown") ==
@@ -284,16 +295,16 @@ shutdown:
 
     if(sock != LIBSSH2_INVALID_SOCKET) {
         shutdown(sock, 2);
-#ifdef WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        LIBSSH2_SOCKET_CLOSE(sock);
     }
 
     fprintf(stderr, "all done\n");
 
     libssh2_exit();
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 
     return 0;
 }

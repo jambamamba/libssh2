@@ -41,7 +41,7 @@
 
 #include "libssh2_priv.h"
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <ws2tcpip.h>  /* for socklen_t */
 #endif
 #ifdef HAVE_UNISTD_H
@@ -60,7 +60,7 @@
 #include "channel.h"
 #include "mac.h"
 
-#if defined(WIN32)
+#ifdef _WIN32
 #define libssh2_usec_t long
 #elif defined(__APPLE__)
 #define libssh2_usec_t suseconds_t
@@ -132,11 +132,11 @@ banner_receive(LIBSSH2_SESSION * session)
             if(session->api_block_mode || (ret != -EAGAIN))
                 /* ignore EAGAIN when non-blocking */
                 _libssh2_debug((session, LIBSSH2_TRACE_SOCKET,
-                               "Error recving %d bytes: %d", 1, (int)-ret));
+                               "Error recving %d bytes: %ld", 1, (long)-ret));
         }
         else
             _libssh2_debug((session, LIBSSH2_TRACE_SOCKET,
-                           "Recved %d bytes banner", (int)ret));
+                           "Recved %ld bytes banner", (long)ret));
 
         if(ret < 0) {
             if(ret == -EAGAIN) {
@@ -212,7 +212,7 @@ banner_receive(LIBSSH2_SESSION * session)
 static int
 banner_send(LIBSSH2_SESSION * session)
 {
-    char *banner = (char *) LIBSSH2_SSH_DEFAULT_BANNER_WITH_CRLF;
+    const char *banner = LIBSSH2_SSH_DEFAULT_BANNER_WITH_CRLF;
     size_t banner_len = sizeof(LIBSSH2_SSH_DEFAULT_BANNER_WITH_CRLF) - 1;
     ssize_t ret;
 
@@ -253,13 +253,15 @@ banner_send(LIBSSH2_SESSION * session)
                        LIBSSH2_SOCKET_SEND_FLAGS(session));
     if(ret < 0)
         _libssh2_debug((session, LIBSSH2_TRACE_SOCKET,
-                       "Error sending %d bytes: %d",
-                       banner_len - session->banner_TxRx_total_send, -ret));
+                       "Error sending %ld bytes: %ld",
+                       (long)(banner_len - session->banner_TxRx_total_send),
+                       (long)-ret));
     else
         _libssh2_debug((session, LIBSSH2_TRACE_SOCKET,
-                       "Sent %d/%d bytes at %p+%d", ret,
-                       banner_len - session->banner_TxRx_total_send,
-                       banner, session->banner_TxRx_total_send));
+                       "Sent %ld/%ld bytes at %p+%ld", (long)ret,
+                       (long)(banner_len - session->banner_TxRx_total_send),
+                       (const void *)banner,
+                       (long)session->banner_TxRx_total_send));
 
     if(ret != (ssize_t)(banner_len - session->banner_TxRx_total_send)) {
         if(ret >= 0 || ret == -EAGAIN) {
@@ -313,7 +315,7 @@ session_nonblock(libssh2_socket_t sockfd,   /* operate on this */
     /* BeOS */
     long b = nonblock ? 1 : 0;
     return setsockopt(sockfd, SOL_SOCKET, SO_NONBLOCK, &b, sizeof(b));
-#elif defined(WIN32)
+#elif defined(_WIN32)
     unsigned long flags;
 
     flags = nonblock;
@@ -366,7 +368,7 @@ get_socket_nonblocking(libssh2_socket_t sockfd)
         return 1;
     }
     return 0;
-#elif defined(WIN32)
+#elif defined(_WIN32)
     unsigned int option_value;
     socklen_t option_len = sizeof(option_value);
 
@@ -417,6 +419,7 @@ libssh2_session_banner_set(LIBSSH2_SESSION * session, const char *banner)
     return 0;
 }
 
+#ifndef LIBSSH2_NO_DEPRECATED
 /* libssh2_banner_set
  * Set the local banner. DEPRECATED VERSION
  */
@@ -425,6 +428,7 @@ libssh2_banner_set(LIBSSH2_SESSION * session, const char *banner)
 {
     return libssh2_session_banner_set(session, banner);
 }
+#endif
 
 /*
  * libssh2_session_init_ex
@@ -466,9 +470,12 @@ libssh2_session_init_ex(LIBSSH2_ALLOC_FUNC((*my_alloc)),
         session->abstract = abstract;
         session->api_timeout = 0; /* timeout-free API by default */
         session->api_block_mode = 1; /* blocking API by default */
+        session->state = LIBSSH2_STATE_INITIAL_KEX;
+        session->fullpacket_required_type = 0;
         session->packet_read_timeout = LIBSSH2_DEFAULT_READ_TIMEOUT;
         session->flag.quote_paths = 1; /* default behavior is to quote paths
                                           for the scp subsystem */
+        session->kex = NULL;
         _libssh2_debug((session, LIBSSH2_TRACE_TRANS,
                        "New session resource allocated"));
         _libssh2_init_if_needed();
@@ -477,7 +484,85 @@ libssh2_session_init_ex(LIBSSH2_ALLOC_FUNC((*my_alloc)),
 }
 
 /*
- * libssh2_session_callback_set
+ * libssh2_session_callback_set2
+ *
+ * Set (or reset) a callback function
+ * Returns the prior address
+ */
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcast-function-type"
+#endif
+LIBSSH2_API libssh2_cb_generic *
+libssh2_session_callback_set2(LIBSSH2_SESSION *session, int cbtype,
+                              libssh2_cb_generic *callback)
+{
+    libssh2_cb_generic *oldcb;
+
+    switch(cbtype) {
+    case LIBSSH2_CALLBACK_IGNORE:
+        oldcb = (libssh2_cb_generic *)session->ssh_msg_ignore;
+        session->ssh_msg_ignore = (LIBSSH2_IGNORE_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_DEBUG:
+        oldcb = (libssh2_cb_generic *)session->ssh_msg_debug;
+        session->ssh_msg_debug = (LIBSSH2_DEBUG_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_DISCONNECT:
+        oldcb = (libssh2_cb_generic *)session->ssh_msg_disconnect;
+        session->ssh_msg_disconnect = (LIBSSH2_DISCONNECT_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_MACERROR:
+        oldcb = (libssh2_cb_generic *)session->macerror;
+        session->macerror = (LIBSSH2_MACERROR_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_X11:
+        oldcb = (libssh2_cb_generic *)session->x11;
+        session->x11 = (LIBSSH2_X11_OPEN_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_SEND:
+        oldcb = (libssh2_cb_generic *)session->send;
+        session->send = (LIBSSH2_SEND_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_RECV:
+        oldcb = (libssh2_cb_generic *)session->recv;
+        session->recv = (LIBSSH2_RECV_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_AUTHAGENT:
+        oldcb = (libssh2_cb_generic *)session->authagent;
+        session->authagent = (LIBSSH2_AUTHAGENT_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES:
+        oldcb = (libssh2_cb_generic *)session->addLocalIdentities;
+        session->addLocalIdentities =
+            (LIBSSH2_ADD_IDENTITIES_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_AUTHAGENT_SIGN:
+        oldcb = (libssh2_cb_generic *)session->agentSignCallback;
+        session->agentSignCallback =
+            (LIBSSH2_AUTHAGENT_SIGN_FUNC((*)))callback;
+        return oldcb;
+    }
+    _libssh2_debug((session, LIBSSH2_TRACE_TRANS, "Setting Callback %d",
+                   cbtype));
+
+    return NULL;
+}
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
+/*
+ * libssh2_session_callback_set (DEPRECATED, DO NOT USE!)
  *
  * Set (or reset) a callback function
  * Returns the prior address
@@ -487,8 +572,10 @@ libssh2_session_init_ex(LIBSSH2_ALLOC_FUNC((*my_alloc)),
  */
 #ifdef _MSC_VER
 #pragma warning(push)
-/* nonstandard extension, function/data pointer conversion in expression */
-#pragma warning(disable:4152)
+/* 'type cast': from data pointer to function pointer */
+#pragma warning(disable:4054)
+/* 'type cast': from function pointer to data pointer */
+#pragma warning(disable:4055)
 #else
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -497,63 +584,8 @@ LIBSSH2_API void *
 libssh2_session_callback_set(LIBSSH2_SESSION * session,
                              int cbtype, void *callback)
 {
-    void *oldcb;
-
-    switch(cbtype) {
-    case LIBSSH2_CALLBACK_IGNORE:
-        oldcb = session->ssh_msg_ignore;
-        session->ssh_msg_ignore = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_DEBUG:
-        oldcb = session->ssh_msg_debug;
-        session->ssh_msg_debug = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_DISCONNECT:
-        oldcb = session->ssh_msg_disconnect;
-        session->ssh_msg_disconnect = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_MACERROR:
-        oldcb = session->macerror;
-        session->macerror = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_X11:
-        oldcb = session->x11;
-        session->x11 = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_SEND:
-        oldcb = session->send;
-        session->send = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_RECV:
-        oldcb = session->recv;
-        session->recv = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_AUTHAGENT:
-        oldcb = session->authagent;
-        session->authagent = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES:
-        oldcb = session->addLocalIdentities;
-        session->addLocalIdentities = callback;
-        return oldcb;
-
-    case LIBSSH2_CALLBACK_AUTHAGENT_SIGN:
-        oldcb = session->agentSignCallback;
-        session->agentSignCallback = callback;
-        return oldcb;
-    }
-    _libssh2_debug((session, LIBSSH2_TRACE_TRANS, "Setting Callback %d",
-                   cbtype));
-
-    return NULL;
+    return (void *)libssh2_session_callback_set2(session, cbtype,
+                                               (libssh2_cb_generic *)callback);
 }
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -651,13 +683,27 @@ int _libssh2_wait_socket(LIBSSH2_SESSION *session, time_t start_time)
 
         if(dir & LIBSSH2_SESSION_BLOCK_INBOUND) {
             FD_ZERO(&rfd);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
             FD_SET(session->socket_fd, &rfd);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
             readfd = &rfd;
         }
 
         if(dir & LIBSSH2_SESSION_BLOCK_OUTBOUND) {
             FD_ZERO(&wfd);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
             FD_SET(session->socket_fd, &wfd);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
             writefd = &wfd;
         }
 
@@ -670,6 +716,18 @@ int _libssh2_wait_socket(LIBSSH2_SESSION *session, time_t start_time)
                               "Timed out waiting on socket");
     }
     if(rc < 0) {
+        int err;
+#ifdef _WIN32
+        err = _libssh2_wsa2errno();
+#else
+        err = errno;
+#endif
+        /* Profiling tools that use SIGPROF can cause EINTR responses.
+           poll() / select() do not set any descriptor states on EINTR,
+           but some fds may be ready, so the caller should try again */
+        if(err == EINTR)
+            return 0;
+
         return _libssh2_error(session, LIBSSH2_ERROR_TIMEOUT,
                               "Error waiting on socket");
     }
@@ -682,9 +740,15 @@ session_startup(LIBSSH2_SESSION *session, libssh2_socket_t sock)
 {
     int rc;
 
+    if(!session) {
+        fprintf(stderr, "Session is NULL, error: %i\n",
+                LIBSSH2_ERROR_PROTO);
+        return LIBSSH2_ERROR_PROTO;
+    }
+
     if(session->startup_state == libssh2_NB_state_idle) {
         _libssh2_debug((session, LIBSSH2_TRACE_TRANS,
-                       "session_startup for socket %d", sock));
+                       "session_startup for socket %ld", (long)sock));
         if(LIBSSH2_INVALID_SOCKET == sock) {
             /* Did we forget something? */
             return _libssh2_error(session, LIBSSH2_ERROR_BAD_SOCKET,
@@ -830,6 +894,7 @@ libssh2_session_handshake(LIBSSH2_SESSION *session, libssh2_socket_t sock)
     return rc;
 }
 
+#ifndef LIBSSH2_NO_DEPRECATED
 /*
  * libssh2_session_startup
  *
@@ -846,6 +911,7 @@ libssh2_session_startup(LIBSSH2_SESSION *session, int sock)
 {
     return libssh2_session_handshake(session, (libssh2_socket_t) sock);
 }
+#endif
 
 /*
  * session_free
@@ -864,8 +930,8 @@ session_free(LIBSSH2_SESSION *session)
 
     if(session->free_state == libssh2_NB_state_idle) {
         _libssh2_debug((session, LIBSSH2_TRACE_TRANS,
-                       "Freeing session resource",
-                       session->remote.banner));
+                       "Freeing session resource %p",
+                       (void *)session->remote.banner));
 
         session->free_state = libssh2_NB_state_created;
     }
@@ -890,6 +956,11 @@ session_free(LIBSSH2_SESSION *session)
         }
 
         session->free_state = libssh2_NB_state_sent1;
+    }
+
+    if(session->kex && session->kex->cleanup) {
+        session->kex->cleanup(session,
+                              &session->startup_key_state.key_state_low);
     }
 
     if(session->state & LIBSSH2_STATE_NEWKEYS) {
@@ -1101,7 +1172,7 @@ session_free(LIBSSH2_SESSION *session)
     /* error string */
     if(session->err_msg &&
        ((session->err_flags & LIBSSH2_ERR_FLAG_DUP) != 0)) {
-        LIBSSH2_FREE(session, (char *)session->err_msg);
+        LIBSSH2_FREE(session, (char *)LIBSSH2_UNCONST(session->err_msg));
     }
 
     LIBSSH2_FREE(session, session);
@@ -1188,6 +1259,7 @@ libssh2_session_disconnect_ex(LIBSSH2_SESSION *session, int reason,
                               const char *desc, const char *lang)
 {
     int rc;
+    session->state &= ~LIBSSH2_STATE_INITIAL_KEX;
     session->state &= ~LIBSSH2_STATE_EXCHANGING_KEYS;
     BLOCK_ADJUST(rc, session,
                  session_disconnect(session, reason, desc, lang));
@@ -1214,31 +1286,31 @@ libssh2_session_methods(LIBSSH2_SESSION * session, int method_type)
         break;
 
     case LIBSSH2_METHOD_HOSTKEY:
-        method = (LIBSSH2_KEX_METHOD *) session->hostkey;
+        method = (const LIBSSH2_KEX_METHOD *) session->hostkey;
         break;
 
     case LIBSSH2_METHOD_CRYPT_CS:
-        method = (LIBSSH2_KEX_METHOD *) session->local.crypt;
+        method = (const LIBSSH2_KEX_METHOD *) session->local.crypt;
         break;
 
     case LIBSSH2_METHOD_CRYPT_SC:
-        method = (LIBSSH2_KEX_METHOD *) session->remote.crypt;
+        method = (const LIBSSH2_KEX_METHOD *) session->remote.crypt;
         break;
 
     case LIBSSH2_METHOD_MAC_CS:
-        method = (LIBSSH2_KEX_METHOD *) session->local.mac;
+        method = (const LIBSSH2_KEX_METHOD *) session->local.mac;
         break;
 
     case LIBSSH2_METHOD_MAC_SC:
-        method = (LIBSSH2_KEX_METHOD *) session->remote.mac;
+        method = (const LIBSSH2_KEX_METHOD *) session->remote.mac;
         break;
 
     case LIBSSH2_METHOD_COMP_CS:
-        method = (LIBSSH2_KEX_METHOD *) session->local.comp;
+        method = (const LIBSSH2_KEX_METHOD *) session->local.comp;
         break;
 
     case LIBSSH2_METHOD_COMP_SC:
-        method = (LIBSSH2_KEX_METHOD *) session->remote.comp;
+        method = (const LIBSSH2_KEX_METHOD *) session->remote.comp;
         break;
 
     case LIBSSH2_METHOD_LANG_CS:
@@ -1293,7 +1365,7 @@ libssh2_session_last_error(LIBSSH2_SESSION * session, char **errmsg,
                 }
             }
             else {
-                *errmsg = (char *) "";
+                *errmsg = (char *)LIBSSH2_UNCONST("");
             }
         }
         if(errmsg_len) {
@@ -1316,7 +1388,7 @@ libssh2_session_last_error(LIBSSH2_SESSION * session, char **errmsg,
             }
         }
         else
-            *errmsg = (char *)error;
+            *errmsg = (char *)LIBSSH2_UNCONST(error);
     }
 
     if(errmsg_len) {
@@ -1597,19 +1669,40 @@ libssh2_poll(LIBSSH2_POLLFD * fds, unsigned int nfds, long timeout)
         switch(fds[i].type) {
         case LIBSSH2_POLLFD_SOCKET:
             if(fds[i].events & LIBSSH2_POLLFD_POLLIN) {
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
                 FD_SET(fds[i].fd.socket, &rfds);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
                 if(fds[i].fd.socket > maxfd)
                     maxfd = fds[i].fd.socket;
             }
             if(fds[i].events & LIBSSH2_POLLFD_POLLOUT) {
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
                 FD_SET(fds[i].fd.socket, &wfds);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
                 if(fds[i].fd.socket > maxfd)
                     maxfd = fds[i].fd.socket;
             }
             break;
 
         case LIBSSH2_POLLFD_CHANNEL:
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
             FD_SET(fds[i].fd.channel->session->socket_fd, &rfds);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
             if(fds[i].fd.channel->session->socket_fd > maxfd)
                 maxfd = fds[i].fd.channel->session->socket_fd;
             if(!session)
@@ -1617,7 +1710,14 @@ libssh2_poll(LIBSSH2_POLLFD * fds, unsigned int nfds, long timeout)
             break;
 
         case LIBSSH2_POLLFD_LISTENER:
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
             FD_SET(fds[i].fd.listener->session->socket_fd, &rfds);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
             if(fds[i].fd.listener->session->socket_fd > maxfd)
                 maxfd = fds[i].fd.listener->session->socket_fd;
             if(!session)
@@ -1773,7 +1873,11 @@ libssh2_poll(LIBSSH2_POLLFD * fds, unsigned int nfds, long timeout)
         }
 #elif defined(HAVE_SELECT)
         tv.tv_sec = timeout_remaining / 1000;
+#ifdef libssh2_usec_t
+        tv.tv_usec = (libssh2_usec_t)((timeout_remaining % 1000) * 1000);
+#else
         tv.tv_usec = (timeout_remaining % 1000) * 1000;
+#endif
 
         {
             struct timeval tv_begin, tv_end;
@@ -1790,6 +1894,10 @@ libssh2_poll(LIBSSH2_POLLFD * fds, unsigned int nfds, long timeout)
             for(i = 0; i < nfds; i++) {
                 switch(fds[i].type) {
                 case LIBSSH2_POLLFD_SOCKET:
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
                     if(FD_ISSET(fds[i].fd.socket, &rfds)) {
                         fds[i].revents |= LIBSSH2_POLLFD_POLLIN;
                     }
@@ -1799,6 +1907,9 @@ libssh2_poll(LIBSSH2_POLLFD * fds, unsigned int nfds, long timeout)
                     if(fds[i].revents) {
                         active_fds++;
                     }
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
                     break;
 
                 case LIBSSH2_POLLFD_CHANNEL:

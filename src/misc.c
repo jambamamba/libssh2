@@ -48,10 +48,13 @@
 #include <errno.h>
 #include <assert.h>
 
-#ifdef WIN32
+#ifdef _WIN32
 /* Force parameter type. */
-#define recv(s, b, l, f)  recv((s), (b), (int)(l), (f))
-#define send(s, b, l, f)  send((s), (b), (int)(l), (f))
+#define libssh2_recv(s, b, l, f)  recv((s), (b), (int)(l), (f))
+#define libssh2_send(s, b, l, f)  send((s), (b), (int)(l), (f))
+#else
+#define libssh2_recv  recv
+#define libssh2_send  send
 #endif
 
 /* snprintf not in Visual Studio CRT and _snprintf dangerously incompatible.
@@ -88,7 +91,7 @@ int _libssh2_error_flags(LIBSSH2_SESSION* session, int errcode,
     }
 
     if(session->err_flags & LIBSSH2_ERR_FLAG_DUP)
-        LIBSSH2_FREE(session, (char *)session->err_msg);
+        LIBSSH2_FREE(session, (char *)LIBSSH2_UNCONST(session->err_msg));
 
     session->err_code = errcode;
     session->err_flags = 0;
@@ -125,8 +128,8 @@ int _libssh2_error(LIBSSH2_SESSION* session, int errcode, const char *errmsg)
     return _libssh2_error_flags(session, errcode, errmsg, 0);
 }
 
-#ifdef WIN32
-static int wsa2errno(void)
+#ifdef _WIN32
+int _libssh2_wsa2errno(void)
 {
     switch(WSAGetLastError()) {
     case WSAEWOULDBLOCK:
@@ -159,24 +162,30 @@ _libssh2_recv(libssh2_socket_t sock, void *buffer, size_t length,
 
     (void)abstract;
 
-    rc = recv(sock, buffer, length, flags);
-#ifdef WIN32
-    if(rc < 0)
-        return -wsa2errno();
-#else
+    rc = libssh2_recv(sock, buffer, length, flags);
     if(rc < 0) {
+        int err;
+#ifdef _WIN32
+        err = _libssh2_wsa2errno();
+#else
+        err = errno;
+#endif
+        /* Profiling tools that use SIGPROF can cause EINTR responses.
+           recv() does not modify its arguments when it returns EINTR,
+           but there may be data waiting, so the caller should try again */
+        if(err == EINTR)
+            return -EAGAIN;
         /* Sometimes the first recv() function call sets errno to ENOENT on
            Solaris and HP-UX */
-        if(errno == ENOENT)
+        if(err == ENOENT)
             return -EAGAIN;
 #ifdef EWOULDBLOCK /* For VMS and other special unixes */
-        else if(errno == EWOULDBLOCK)
-          return -EAGAIN;
+        else if(err == EWOULDBLOCK)
+            return -EAGAIN;
 #endif
         else
-            return -errno;
+            return -err;
     }
-#endif
     return rc;
 }
 
@@ -192,19 +201,25 @@ _libssh2_send(libssh2_socket_t sock, const void *buffer, size_t length,
 
     (void)abstract;
 
-    rc = send(sock, buffer, length, flags);
-#ifdef WIN32
-    if(rc < 0)
-        return -wsa2errno();
-#else
+    rc = libssh2_send(sock, buffer, length, flags);
     if(rc < 0) {
+        int err;
+#ifdef _WIN32
+        err = _libssh2_wsa2errno();
+#else
+        err = errno;
+#endif
+        /* Profiling tools that use SIGPROF can cause EINTR responses.
+           send() is defined as not yet sending any data when it returns EINTR,
+           so the caller should try again */
+        if(err == EINTR)
+            return -EAGAIN;
 #ifdef EWOULDBLOCK /* For VMS and other special unixes */
-        if(errno == EWOULDBLOCK)
+        if(err == EWOULDBLOCK)
             return -EAGAIN;
 #endif
-        return -errno;
+        return -err;
     }
-#endif
     return rc;
 }
 
@@ -254,6 +269,24 @@ void _libssh2_store_u32(unsigned char **buf, uint32_t value)
     *buf += sizeof(uint32_t);
 }
 
+/* _libssh2_store_u64
+ */
+void _libssh2_store_u64(unsigned char **buf, libssh2_uint64_t value)
+{
+    unsigned char *ptr = *buf;
+
+    ptr[0] = (unsigned char)((value >> 56) & 0xFF);
+    ptr[1] = (unsigned char)((value >> 48) & 0xFF);
+    ptr[2] = (unsigned char)((value >> 40) & 0xFF);
+    ptr[3] = (unsigned char)((value >> 32) & 0xFF);
+    ptr[4] = (unsigned char)((value >> 24) & 0xFF);
+    ptr[5] = (unsigned char)((value >> 16) & 0xFF);
+    ptr[6] = (unsigned char)((value >> 8) & 0xFF);
+    ptr[7] = (unsigned char)(value & 0xFF);
+
+    *buf += sizeof(libssh2_uint64_t);
+}
+
 /* _libssh2_store_str
  */
 int _libssh2_store_str(unsigned char **buf, const char *str, size_t len)
@@ -284,7 +317,7 @@ int _libssh2_store_bignum2_bytes(unsigned char **buf,
 
     extraByte = (len > 0 && (p[0] & 0x80) != 0);
     len_stored = (uint32_t)len;
-    if(extraByte && len_stored == 0xffffffff)
+    if(extraByte && len_stored == UINT32_MAX)
         len_stored--;
     _libssh2_store_u32(buf, len_stored + extraByte);
 
@@ -323,9 +356,10 @@ static const short base64_reverse_table[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
 };
 
-/* libssh2_base64_decode
+#ifndef LIBSSH2_NO_DEPRECATED
+/* libssh2_base64_decode (DEPRECATED, DO NOT USE!)
  *
- * Legacy public function. DEPRECATED.
+ * Legacy public function.
  */
 LIBSSH2_API int
 libssh2_base64_decode(LIBSSH2_SESSION *session, char **data,
@@ -342,6 +376,7 @@ libssh2_base64_decode(LIBSSH2_SESSION *session, char **data,
 
     return rc;
 }
+#endif
 
 /* _libssh2_base64_decode
  *
@@ -354,9 +389,10 @@ int _libssh2_base64_decode(LIBSSH2_SESSION *session,
     unsigned char *d;
     const char *s;
     short v;
-    ssize_t i = 0, len = 0;
+    size_t i = 0, len = 0;
 
-    *data = LIBSSH2_ALLOC(session, ((src_len / 4) * 3) + 1);
+    *datalen = 0;
+    *data = LIBSSH2_ALLOC(session, src_len);
     d = (unsigned char *) *data;
     if(!d) {
         return _libssh2_error(session, LIBSSH2_ERROR_ALLOC,
@@ -425,6 +461,9 @@ size_t _libssh2_base64_encode(LIBSSH2_SESSION *session,
 
     if(insize == 0)
         insize = strlen(indata);
+
+    if(insize == 0)
+        return 0; /* nothing to encode */
 
     base64data = output = LIBSSH2_ALLOC(session, insize * 4 / 3 + 4);
     if(!output)
@@ -708,7 +747,7 @@ int _libssh2_gettimeofday(struct timeval *tp, void *tzp)
 {
     (void)tzp;
     if(tp) {
-#ifdef WIN32
+#ifdef _WIN32
         /* Offset between 1601-01-01 and 1970-01-01 in 100 nanosec units */
         #define _WIN32_FT_OFFSET (116444736000000000)
 
@@ -751,24 +790,6 @@ void _libssh2_xor_data(unsigned char *output,
 
     for(i = 0; i < length; i++)
         *output++ = *input1++ ^ *input2++;
-}
-
-/* Increments an AES CTR buffer to prepare it for use with the
-   next AES block. */
-void _libssh2_aes_ctr_increment(unsigned char *ctr,
-                                size_t length)
-{
-    unsigned char *pc;
-    unsigned int val, carry;
-
-    pc = ctr + length - 1;
-    carry = 1;
-
-    while(pc >= ctr) {
-        val = (unsigned int)*pc + carry;
-        *pc-- = val & 0xFF;
-        carry = val >> 8;
-    }
 }
 
 #ifdef LIBSSH2_MEMZERO

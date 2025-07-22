@@ -38,10 +38,15 @@ int test(LIBSSH2_SESSION *session)
     /* Ignore our hard-wired Dockerfile user when not running under Docker */
     if(!openssh_fixture_have_docker()) {
         username = getenv("USER");
-#ifdef WIN32
+#ifdef _WIN32
         if(!username)
             username = getenv("USERNAME");
 #endif
+    }
+
+    if(!username) {
+        fprintf(stderr, "username not set\n");
+        return 1;
     }
 
     userauth_list = libssh2_userauth_list(session, username,
@@ -96,7 +101,7 @@ int test(LIBSSH2_SESSION *session)
         char buf[1024];
         ssize_t err = libssh2_channel_read(channel, buf, sizeof(buf));
         if(err < 0)
-            fprintf(stderr, "Unable to read response: %d\n", (int)err);
+            fprintf(stderr, "Unable to read response: %ld\n", (long)err);
         else {
             unsigned int i;
             for(i = 0; i < (unsigned long)err; ++i) {

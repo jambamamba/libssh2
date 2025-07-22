@@ -1,5 +1,6 @@
 # Copyright (C) The libssh2 project and its contributors.
 # SPDX-License-Identifier: BSD-3-Clause
+
 # Keep this list sorted
 #
 # NOTE: test_auth_keyboard_info_request does not use the network, but when
@@ -25,6 +26,7 @@ DOCKER_TESTS = \
   test_auth_pubkey_ok_rsa_encrypted \
   test_auth_pubkey_ok_rsa_openssh \
   test_auth_pubkey_ok_rsa_signed \
+  test_auth_pubkey_ok_rsa_sha2_256_signed \
   test_hostkey_hash \
   test_read
 
@@ -80,6 +82,9 @@ EXTRA_DIST = \
   key_rsa_signed \
   key_rsa_signed-cert.pub \
   key_rsa_signed.pub \
+  key_rsa_sha2_256_signed \
+  key_rsa_sha2_256_signed-cert.pub \
+  key_rsa_sha2_256_signed.pub \
   mansyntax.sh \
   openssh_server/Dockerfile \
   openssh_server/authorized_keys \

@@ -6,8 +6,7 @@
 # Start sshd, invoke test(s), saving exit code, kill sshd, and
 # return exit code.
 
-set -e
-set -u
+set -eu
 
 # https://testanything.org/tap-specification.html
 
@@ -45,8 +44,8 @@ fi
 
 d="$(cd "${d}" || exit; pwd)"  # sshd needs absolute paths
 
-SSHD="${SSHD:-/usr/sbin/sshd}"
-[[ "${uname}" = *'_NT'* ]] && SSHD="$(cygpath -u "${SSHD}")"
+SSHD="$(command -v "${SSHD:-sshd}" || true)"
+[[ "${uname}" = *'_NT'* ]] && SSHD="$(cygpath "${SSHD}")"
 ver="$("${SSHD}" -V 2>&1 || true)"
 if [[ "${ver}" =~ OpenSSH_[a-zA-Z0-9_\ .,]+ ]]; then
   ver="${BASH_REMATCH[0]}"
@@ -60,8 +59,8 @@ echo "# sshd executable: '${SSHD}' (${ver})"
 [ -z "${PUBKEY:-}" ]  && export PUBKEY="${d}/key_rsa.pub"
 cakeys="${d}/openssh_server/ca_user_keys.pub"
 
-readonly logfsrv="$(mktemp)"
-readonly logfcli="$(mktemp)"
+logfsrv="$(mktemp)"; readonly logfsrv
+logfcli="$(mktemp)"; readonly logfcli
 
 echo "# sshd log: '${logfsrv}'"
 
@@ -80,6 +79,7 @@ chmod go-rwx \
 "${SSHD}" \
   -f "${SSHD_FIXTURE_CONFIG:-${d}/openssh_server/sshd_config}" \
   -o 'Port 4711' \
+  -o 'StrictModes no' \
   -h "${d}/openssh_server/ssh_host_rsa_key" \
   -h "${d}/openssh_server/ssh_host_ecdsa_key" \
   -h "${d}/openssh_server/ssh_host_ed25519_key" \
@@ -101,10 +101,14 @@ if [ -n "${SSH}" ]; then
   echo "# ssh log: '${logfcli}'"
   chmod go-rwx "${PRIVKEY}"
   if [[ "${uname}" = *'_NT'* ]]; then
-    export MSYS2_ARG_CONV_EXCL='/reset'
-    icacls "${PRIVKEY}" /reset
-    icacls "${PRIVKEY}" /grant:r "${USERNAME}:(R)"
-    icacls "${PRIVKEY}" /inheritance:r
+    if [ -x /bin/setfacl ]; then
+      /bin/setfacl --remove-all "${PRIVKEY}"
+    else
+      export MSYS2_ARG_CONV_EXCL='/reset'
+      icacls "${PRIVKEY}" /reset
+      icacls "${PRIVKEY}" /grant:r "${USERNAME}:(R)"
+      icacls "${PRIVKEY}" /inheritance:r
+    fi
   fi
   count=1
   # shellcheck disable=SC2086
@@ -145,11 +149,12 @@ echo "${count}..${total}"
 export OPENSSH_NO_DOCKER=1
 
 for test in ${tests}; do
-  if "${test}"; then
+  if ${LIBSSH2_TEST_EXE_RUNNER:-} "${test}"; then
     res='ok'
   else
+    testerr=$?
     anyerror=1
-    [ "${via_args}" = '1' ] && [ "${total}" = '1' ] && ec=$?
+    [ "${via_args}" = '1' ] && [ "${total}" = '1' ] && ec="${testerr}"
     res='not ok'
   fi
   echo "${res} ${count} - sshd-$(basename "${test}")"

@@ -36,8 +36,8 @@ Use this with CMake 3.12.x or older:
 
 libssh2 will be built as a static library and will use any
 cryptography library available.  The library binary will be put in
-`bin/src`, with the examples in `bin/example` and the tests in
-`bin/tests`.
+`bld/src`, with the examples in `bld/example` and the tests in
+`bld/tests`.
 
 Customising the build
 ---------------------
@@ -67,9 +67,10 @@ The following options are available:
  * `CRYPTO_BACKEND=`
 
     Chooses a specific cryptography library to use for cryptographic
-    operations.  Can be `OpenSSL` (https://www.openssl.org),
+    operations.  Can be `OpenSSL` (https://www.openssl-library.org/),
     `Libgcrypt` (https://www.gnupg.org/), `WinCNG` (Windows Vista+),
-    `mbedTLS` (https://tls.mbed.org/) or blank to use any library available.
+    `mbedTLS` (https://www.trustedfirmware.org/projects/mbed-tls/) or
+    blank to use any library available.
 
     CMake will attempt to locate the libraries automatically.  See [2]
     for more information.
@@ -88,6 +89,12 @@ The following options are available:
 
     Disable secure zero memory before freeing it (not recommended).
     Can be `ON` or `OFF`. Default: `ON`
+
+Using BoringSSL or AWS-LC
+-------------------------
+You can also build against [BoringSSL](https://github.com/google/boringssl)
+or [AWS-LC](https://github.com/aws/aws-lc). Specify `CRYPTO_BACKEND=OpenSSL`, then indicate
+the installation directory of the cryptography library using `OPENSSL_ROOT_DIR=`
 
 Build tools
 -----------

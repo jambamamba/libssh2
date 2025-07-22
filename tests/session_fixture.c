@@ -46,12 +46,9 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_SYS_PARAM_H
-#include <sys/param.h>
-#endif
 
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdlib.h>  /* for getenv() */
 #include <assert.h>
 
 static LIBSSH2_SESSION *connected_session = NULL;
@@ -95,8 +92,7 @@ static char const *skip_crypt[] = {
     "3des-cbc",
 #endif
 
-#if defined(LIBSSH2_LIBGCRYPT) || defined(LIBSSH2_OS400QC3) || \
-    defined(LIBSSH2_WINCNG)
+#if !LIBSSH2_AES_GCM
     /* Support for AES-GCM hasn't been added to these back-ends yet */
     "aes128-gcm@openssh.com",
     "aes256-gcm@openssh.com",
@@ -239,6 +235,8 @@ void stop_session_fixture(void)
     close_socket_to_openssh_server(connected_socket);
     connected_socket = LIBSSH2_INVALID_SOCKET;
 
+    srcdir_path(NULL);  /* cleanup allocated filepath */
+
     libssh2_exit();
 
     stop_openssh_fixture();
@@ -246,37 +244,50 @@ void stop_session_fixture(void)
 
 
 /* Return a static string that contains a file path relative to the srcdir
- * variable, if found. It does so in a way that avoids leaking memory by using
- * a fixed number of static buffers.
+ * variable, if found.
  */
 #define NUMPATHS 32
-const char *srcdir_path(const char *file)
+char *srcdir_path(const char *file)
 {
-#ifdef WIN32
-    static char filepath[NUMPATHS][_MAX_PATH];
-#else
-    static char filepath[NUMPATHS][MAXPATHLEN];
-#endif
+    static char *filepath[NUMPATHS];
     static int curpath;
     char *p = getenv("srcdir");
-    if(curpath >= NUMPATHS) {
-        fprintf(stderr, "srcdir_path ran out of filepath slots.\n");
-    }
-    assert(curpath < NUMPATHS);
-    if(p) {
-        /* Ensure the final string is nul-terminated on Windows */
-        filepath[curpath][sizeof(filepath[0]) - 1] = 0;
-        snprintf(filepath[curpath], sizeof(filepath[0]) - 1, "%s/%s",
-                 p, file);
+    if(file) {
+        int len;
+        if(curpath >= NUMPATHS) {
+            fprintf(stderr, "srcdir_path ran out of filepath slots.\n");
+        }
+        assert(curpath < NUMPATHS);
+        if(p) {
+            len = snprintf(NULL, 0, "%s/%s", p, file);
+            if(len > 2) {
+                filepath[curpath] = calloc(1, (size_t)len + 1);
+                snprintf(filepath[curpath], (size_t)len + 1, "%s/%s", p, file);
+            }
+            else {
+               return NULL;
+            }
+        }
+        else {
+            len = snprintf(NULL, 0, "%s", file);
+            if(len > 0) {
+                filepath[curpath] = calloc(1, (size_t)len + 1);
+                snprintf(filepath[curpath], (size_t)len + 1, "%s", file);
+            }
+            else {
+               return NULL;
+            }
+        }
+        return filepath[curpath++];
     }
     else {
-        /* Ensure the final string is nul-terminated on Windows */
-        filepath[curpath][sizeof(filepath[0]) - 1] = 0;
-        snprintf(filepath[curpath], sizeof(filepath[0]) - 1, "%s",
-                 file);
+        int i;
+        for(i = 0; i < curpath; ++i) {
+            free(filepath[curpath]);
+        }
+        curpath = 0;
+        return NULL;
     }
-
-    return filepath[curpath++];
 }
 
 static const char *kbd_password;
@@ -403,7 +414,7 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
 {
     FILE *fp;
     char *buffer;
-    size_t len;
+    ssize_t len;
 
     if(!out_buffer || !out_len || !path) {
         fprintf(stderr, "invalid params.\n");
@@ -422,16 +433,21 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
 
     fseek(fp, 0L, SEEK_END);
     len = ftell(fp);
-    rewind(fp);
+    if(len < 0) {
+        fclose(fp);
+        fprintf(stderr, "Could not determine input size of: %s\n", path);
+        return 1;
+    }
+    fseek(fp, 0L, SEEK_SET);
 
-    buffer = calloc(1, len + 1);
+    buffer = calloc(1, (size_t)len + 1);
     if(!buffer) {
         fclose(fp);
         fprintf(stderr, "Could not alloc memory.\n");
         return 1;
     }
 
-    if(1 != fread(buffer, len, 1, fp)) {
+    if(1 != fread(buffer, (size_t)len, 1, fp)) {
         fclose(fp);
         free(buffer);
         fprintf(stderr, "Could not read file into memory.\n");
@@ -441,7 +457,7 @@ static int read_file(const char *path, char **out_buffer, size_t *out_len)
     fclose(fp);
 
     *out_buffer = buffer;
-    *out_len = len;
+    *out_len = (size_t)len;
 
     return 0;
 }
@@ -458,10 +474,18 @@ int test_auth_pubkey(LIBSSH2_SESSION *session, int flags,
     /* Ignore our hard-wired Dockerfile user when not running under Docker */
     if(!openssh_fixture_have_docker() && strcmp(username, "libssh2") == 0) {
         username = getenv("USER");
-#ifdef WIN32
-        if(!username)
+        if(!username) {
+#ifdef _WIN32
             username = getenv("USERNAME");
+#else
+            username = getenv("LOGNAME");
 #endif
+        }
+    }
+
+    if(!username) {
+        fprintf(stderr, "username not set\n");
+        return 1;
     }
 
     userauth_list = libssh2_userauth_list(session, username,

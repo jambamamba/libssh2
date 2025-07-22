@@ -1,5 +1,5 @@
-#ifndef __LIBSSH2_MISC_H
-#define __LIBSSH2_MISC_H
+#ifndef LIBSSH2_MISC_H
+#define LIBSSH2_MISC_H
 /* Copyright (C) Daniel Stenberg
  * All rights reserved.
  *
@@ -44,7 +44,7 @@
                                               (void)(buf); \
                                               (void)(size); \
                                           } while(0)
-#elif defined(WIN32)
+#elif defined(_WIN32)
 #define _libssh2_explicit_zero(buf, size) SecureZeroMemory(buf, size)
 #elif defined(HAVE_EXPLICIT_BZERO)
 #define _libssh2_explicit_zero(buf, size) explicit_bzero(buf, size)
@@ -79,6 +79,11 @@ int _libssh2_error_flags(LIBSSH2_SESSION* session, int errcode,
                          const char *errmsg, int errflags);
 int _libssh2_error(LIBSSH2_SESSION* session, int errcode, const char *errmsg);
 
+#ifdef _WIN32
+/* Convert Win32 WSAGetLastError to errno equivalent */
+int _libssh2_wsa2errno(void);
+#endif
+
 void _libssh2_list_init(struct list_head *head);
 
 /* add a node last in the list */
@@ -107,6 +112,7 @@ uint32_t _libssh2_ntohu32(const unsigned char *buf);
 libssh2_uint64_t _libssh2_ntohu64(const unsigned char *buf);
 void _libssh2_htonu32(unsigned char *buf, uint32_t val);
 void _libssh2_store_u32(unsigned char **buf, uint32_t value);
+void _libssh2_store_u64(unsigned char **buf, libssh2_uint64_t value);
 int _libssh2_store_str(unsigned char **buf, const char *str, size_t len);
 int _libssh2_store_bignum2_bytes(unsigned char **buf,
                                  const unsigned char *bytes,
@@ -135,6 +141,4 @@ void _libssh2_xor_data(unsigned char *output,
                        const unsigned char *input2,
                        size_t length);
 
-void _libssh2_aes_ctr_increment(unsigned char *ctr, size_t length);
-
-#endif /* _LIBSSH2_MISC_H */
+#endif /* LIBSSH2_MISC_H */

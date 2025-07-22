@@ -36,8 +36,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-transform_makefile_inc("Makefile.am" "${CMAKE_CURRENT_BINARY_DIR}/Makefile.am.cmake")
-# Get 'dist_man_MANS' variable
+libssh2_transform_makefile_inc("Makefile.am" "${CMAKE_CURRENT_BINARY_DIR}/Makefile.am.cmake")
+# Get dist_man_MANS variable
 include("${CMAKE_CURRENT_BINARY_DIR}/Makefile.am.cmake")
 
 include(GNUInstallDirs)

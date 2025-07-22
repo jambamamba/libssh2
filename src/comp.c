@@ -88,10 +88,13 @@ comp_method_none_decomp(LIBSSH2_SESSION * session,
                         size_t src_len, void **abstract)
 {
     (void)session;
+    (void)dest;
+    (void)dest_len;
     (void)payload_limit;
+    (void)src;
+    (void)src_len;
     (void)abstract;
-    *dest = (unsigned char *) src;
-    *dest_len = src_len;
+
     return 0;
 }
 
@@ -195,7 +198,11 @@ comp_method_zlib_comp(LIBSSH2_SESSION *session,
     uInt out_maxlen = (uInt)*dest_len;
     int status;
 
-    strm->next_in = (unsigned char *) src;
+#ifdef z_const
+    strm->next_in = (z_const Bytef *)src;
+#else
+    strm->next_in = (Bytef *)LIBSSH2_UNCONST(src);
+#endif
     strm->avail_in = (uInt)src_len;
     strm->next_out = dest;
     strm->avail_out = out_maxlen;
@@ -208,7 +215,7 @@ comp_method_zlib_comp(LIBSSH2_SESSION *session,
     }
 
     _libssh2_debug((session, LIBSSH2_TRACE_TRANS,
-                   "unhandled zlib compression error %d, avail_out",
+                   "unhandled zlib compression error %d, avail_out %u",
                    status, strm->avail_out));
     return _libssh2_error(session, LIBSSH2_ERROR_ZLIB, "compression failure");
 }
@@ -249,10 +256,13 @@ comp_method_zlib_decomp(LIBSSH2_SESSION * session,
     if(out_maxlen > payload_limit)
         out_maxlen = payload_limit;
 
-    strm->next_in = (unsigned char *) src;
+#ifdef z_const
+    strm->next_in = (z_const Bytef *)src;
+#else
+    strm->next_in = (Bytef *)LIBSSH2_UNCONST(src);
+#endif
     strm->avail_in = (uInt)src_len;
-    strm->next_out = (unsigned char *) LIBSSH2_ALLOC(session,
-                                                     (uInt)out_maxlen);
+    strm->next_out = (Bytef *)LIBSSH2_ALLOC(session, (uInt)out_maxlen);
     out = (char *) strm->next_out;
     strm->avail_out = (uInt)out_maxlen;
     if(!strm->next_out)
@@ -302,7 +312,7 @@ comp_method_zlib_decomp(LIBSSH2_SESSION * session,
                                   "Unable to expand decompression buffer");
         }
         out = newout;
-        strm->next_out = (unsigned char *) out + out_ofs;
+        strm->next_out = (Bytef *)out + out_ofs;
         strm->avail_out = (uInt)(out_maxlen - out_ofs);
     }
 

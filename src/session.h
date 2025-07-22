@@ -1,5 +1,5 @@
-#ifndef __LIBSSH2_SESSION_H
-#define __LIBSSH2_SESSION_H
+#ifndef LIBSSH2_SESSION_H
+#define LIBSSH2_SESSION_H
 /* Copyright (C) Sara Golemon <sarag@libssh2.org>
  * Copyright (C) Daniel Stenberg
  * Copyright (C) Simon Josefsson <simon@josefsson.org>
@@ -59,7 +59,8 @@
             rc = x; \
             /* the order of the check below is important to properly \
                deal with the case when the 'sess' is freed */ \
-            if((rc != LIBSSH2_ERROR_EAGAIN) || !sess->api_block_mode) \
+            if((rc != LIBSSH2_ERROR_EAGAIN) || !sess || \
+               !sess->api_block_mode) \
                 break; \
             rc = _libssh2_wait_socket(sess, entry_time);  \
         } while(!rc);   \
@@ -77,7 +78,7 @@
         int rc; \
         do { \
             ptr = x; \
-            if(!sess->api_block_mode || \
+            if(!sess || !sess->api_block_mode || \
                (ptr != NULL) || \
                (libssh2_session_last_errno(sess) != LIBSSH2_ERROR_EAGAIN)) \
                 break; \
@@ -91,4 +92,4 @@ int _libssh2_wait_socket(LIBSSH2_SESSION *session, time_t entry_time);
 /* this is the lib-internal set blocking function */
 int _libssh2_session_set_blocking(LIBSSH2_SESSION * session, int blocking);
 
-#endif /* __LIBSSH2_SESSION_H */
+#endif /* LIBSSH2_SESSION_H */
