@@ -86,7 +86,7 @@ function main(){
     cleanBuild $@
     # installDeps $@
     build target="$target" clean="$clean"
-    package target="$target" dst="/downloads"
+    package target="$target" dst="/data"
     updatepin library="libssh2"
 }
 
