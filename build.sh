@@ -82,11 +82,12 @@ function cleanBuild() {
 
 function main(){
     local target="x86"
+    local library="libssh2"
     parseArgs $@
     cleanBuild $@
     # installDeps $@
     build target="$target" clean="$clean"
-    package target="$target" dst="/data"
+    package $@ target="$target" library="${library}"
     updatepin library="libssh2"
 }
 
