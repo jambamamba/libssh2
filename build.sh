@@ -87,6 +87,7 @@ function main(){
     # installDeps $@
     build target="$target" clean="$clean"
     package target="$target" dst="/downloads"
+    updatepin library="libssh2"
 }
 
 time main $@
